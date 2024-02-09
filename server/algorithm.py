@@ -642,6 +642,11 @@ with app.app_context():
 
         player_name = player["name"]
         player_team = player["team"]
+        game = [game for game in game_list if game["home"]==player_team or game["away"]==player_team][0]
+        if game["home"]==player_team:
+            other_team = game["away"]
+        else:
+            other_team = game["home"]
         
         #collect my own data about every game they've played in
 
@@ -650,10 +655,12 @@ with app.app_context():
             hitter = 0
         else:
             current_player = Hitter.query.filter(Hitter.name==player_name).first()
+            pitcher_name = [player["name"] for player in player_list if player["position"]=="SP" and player["team"]==other_team][0]
+            pitcher_object = Pitcher.query.filter(Pitcher.name==pitcher_name).first()
             hitter = 1
 
 
-        game = [game for game in game_list if game["home"]==player_team or game["away"]==player_team][0]
+        
         
         if current_player:    
 
@@ -671,90 +678,46 @@ with app.app_context():
                     abs = current_player.at_bats
                 
                     
-                    #latest 15 abs at time
+                    #latest 25 abs at time
                     upper_hour = game["time"].hour+1
                     lower_hour = game["time"].hour-1
                     minutes = game["time"].minute
                     upper_time = datetime(2023,2,1,upper_hour,minutes).time()
                     lower_time = datetime(2023,2,1,lower_hour,minutes).time()
-                    abs_at_time = [ab for ab in abs if ab.game.date.time()<=upper_time and ab.game.date.time()>=lower_time][-15:]
-                    ipdb.set_trace()
+                    abs_at_time = [ab for ab in abs if ab.game.date.time()<=upper_time and ab.game.date.time()>=lower_time][-25:]
                    
-                    #last 3 games on specific day
+                    #last 25 abs on specific day
                     current_day = current_date.weekday()
-                    games_on_day = []
-                    for game in games:
-                        if game.game.date.weekday()==current_day:
-                            games_on_day.append(game)
+                    abs_on_day = []
+                    for ab in abs:
+                        if ab.game.date.weekday()==current_day:
+                            abs_on_day.append(ab)
 
-                    games_on_day = games_on_day[-3:]
-
-                    #last 4 games with specified rest period
-                    rest_days = []
-                    last_game = games_to_use[-1]
-                    day_of_last_game =last_game.game.date.weekday()
-                    last_game_day_of_month = last_game.game.date.day
-                    current_day_of_month = current_date.day
-                    weekdays_between = current_day - day_of_last_game
-                    if weekdays_between <0: 
-                        weekdays_between +=7
-                    days_between = current_day_of_month - last_game_day_of_month
-                    if  -7 <= days_between <= 7:
-                    
-                        for index, game in enumerate(games_to_use):
-                            if index>0:
-                                prev_game = games_to_use[index-1]
-                                prev_game_day_of_month = prev_game.game.date.day
-                                prev_game_day_of_week = prev_game.game.date.weekday()
-                                date_difference = game.game.date.day - prev_game_day_of_month
-                                if date_difference < 0:
-                                    date_difference += 7
-                                day_difference = game.game.date.weekday() - prev_game_day_of_week
-                                if day_difference == days_between or date_difference==weekdays_between:
-                                    rest_days.append(game)
-                    rest_days = rest_days[-4:]
-
-                    
+                    abs_on_day = abs_on_day[-25:]
 
 
-                    #last 5 games
-                    latest_games = [game for game in games][-5:]
-                    #last 8 home/away games
-                    latest_home_or_away_games = [game for game in games if game.home==player_home_or_away][-5:]
-
-                    
-                    #get latest matchups vs team
-                    #check recent minutes
-                    minutes_list = [game.minutes for game in latest_games]
-                    minutes = mean(minutes_list)
-                    
-                    games_vs_opponent = [game for game in games_to_use if (game.game.home==other_team or game.game.visitor==other_team)][-4:]
-
-                            
                 
+                    #last 30 abs
+                    latest_games = [ab for ab in abs][-30:]
+
+
+                    #last 8 home/away games
+                    if game["home"]==player_team:
+                        latest_home_or_away_abs = [ab for ab in abs if ab.game.home==player_team][-50:]
+                    else:
+                        latest_home_or_away_abs = [ab for ab in abs if ab.game.visitor==player_team][-50:]
                     
 
-                    #check opponent injuries
+                    
+                    #get latest matchups vs pitcher
+                    #check recent minutes
 
-                    if other_team in injured_list:
-                        opponent_injury = True
-                        games_with_opp_injury = games_vs_opponent.copy()
-                        #gets all the players in each game
-                        for game_players in [game.game.players for game in games]:
-                            #this_current_player is the current player's specific PlayerGame
-                            this_current_player = [game for game in game_players if game.player.name==current_player.name][0]
-                            opponent_players = [player for player in game_players if player.home!=this_current_player.home]
-                            opponent_player_names = [player.player.name for player in opponent_players]
-                            #make a new injured list with only starters
-                            
-                            for injured_player in (injured_list[other_team]):
-                                if Player.query.filter(Player.name==injured_player):
-                                    if len(Player.query.filter(Player.name==injured_player).all())>0:
-                                        injured_player_games = Player.query.filter(Player.name==injured_player).first().games[-5:]
-                                        minutes = mean([game.minutes for game in injured_player_games])
-                                        if minutes > 2000:
-                                            if injured_player in opponent_player_names and this_current_player in games_with_opp_injury:
-                                                games_with_opp_injury.remove(this_current_player)
+                    
+                    abs_vs_opponent = [ab for ab in abs if (ab.pitcher.name==pitcher_name)][-4:]
+
+
+                    ipdb.set_trace()
+
                 
 
                     #opponent stat allowed to position
