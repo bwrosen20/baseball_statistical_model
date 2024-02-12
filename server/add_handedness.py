@@ -3,6 +3,7 @@ from statistics import mean,mode
 from bs4 import BeautifulSoup
 from datetime import datetime, date
 from operator import itemgetter
+from unidecode import unidecode
 import time
 import requests
 import ipdb
@@ -34,17 +35,27 @@ with app.app_context():
             for player in players:
 
                 name = unidecode(player.select('a')[0].text)
+
                 if pitcher_counter < 2:
                     #he's a pitcher. Get his arm handedness
-                    arm = player.select('span')[1].text[-1]
-                    print(f"{name}: Arm- {arm}")
+                    pitcher_object = Pitcher.query.filter(Pitcher.name==name).first()
+                    if pitcher_object:
+                        if pitcher_object.arm != "R" and pitcher_object.arm != "L" and pitcher_object.arm != "S":
+                            arm = player.select('span')[1].text[-1]
+                            pitcher_object.arm=arm
+                            db.session.commit()
+                            print(f"{name}: Arm- {arm}")
                 else: 
                     #he's a hitter. Get bat handedness
-                    bat = player.select('span')[1].text[-3]
-                    print(f'{name}: Bat- {bat}')
+                    hitter_object = Hitter.query.filter(Hitter.name==name).first()
+                    if hitter_object:
+                        if hitter_object.bat != "R" and hitter_object.bat != "L" and hitter_object.bat != "S":
+                            bat = player.select('span')[1].text[-3]
+                            hitter_object.bat = bat
+                            db.session.commit()
+                            print(f'{name}: Bat- {bat}')
 
             pitcher_counter+=1
-            print(f"Pitch counter has been raised to {pitcher_counter}")
 
         time.sleep(3.2)
 

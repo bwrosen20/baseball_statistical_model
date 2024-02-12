@@ -6,8 +6,9 @@ from urllib.request import Request, urlopen
 from pprint import pprint
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import db, Game, Player, PlayerGame
+from models import db, Game, Pitcher, Hitter, AtBat, FinalBet
 from unidecode import unidecode
+from operator import itemgetter
 import time
 import requests
 import ipdb
@@ -16,6 +17,28 @@ import ipdb
 
 
 with app.app_context():
+
+
+    pitchers = Pitcher.query.all()
+
+    sortable_list = []
+
+    for pitcher in pitchers:
+        numerator = len([ab for ab in pitcher.at_bats if "Strikeout" in ab.result])
+        denominator = len(pitcher.at_bats)
+        ratio = numerator/denominator
+        k = {"name":pitcher.name,"ratio":ratio}
+        sortable_list.append(k)
+
+    sorted_ks = sorted(sortable_list,key=itemgetter('ratio'))[0:30]
+
+    for k in sorted_ks:
+        name = k["name"]
+        ks = k["ratio"]
+        print(f"{name}: {ks}")
+
+    ipdb.set_trace()
+    
     
 
     def scrape_a_day(yesterday,month_of_games,year_of_games):

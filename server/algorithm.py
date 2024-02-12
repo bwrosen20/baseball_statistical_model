@@ -5,6 +5,7 @@ from datetime import datetime, date, timedelta
 from operator import itemgetter
 from sqlalchemy import or_
 from unidecode import unidecode
+from random import sample
 import calendar
 import itertools
 import time
@@ -13,6 +14,20 @@ import ipdb
 
 
 with app.app_context():
+
+
+    def random_number(salary):
+        counter = 20
+        value = round(float(salary),2)
+        array = []
+        while counter > value:
+            final_value = round(counter/20,2)
+            array.append(round(float(final_value),2))
+            counter-=.5
+
+        return sample(array,1)[0]
+
+
 
     time_url = "https://time.is/"
     time_page = requests.get(time_url, headers = {'User-Agent':"Mozilla/5.0"})
@@ -123,7 +138,7 @@ with app.app_context():
 
 
     stadiums = {
-        "Milaukee Brewers":"American Family Field",
+        "Milwaukee Brewers":"American Family Field",
         "Los Angeles Angels":"Angel Stadium of Anaheim",
         "St. Louis Cardinals":"Busch Stadium III",
         "Arizona Diamondbacks":"Chase Field",
@@ -293,7 +308,7 @@ with app.app_context():
 
 
     #schedule_page_url = f"https://rotogrinders.com/lineups/mlb?date={year_string}-{month_string}-{day_string}&site=draftkings"
-    schedule_page_url = f"https://rotogrinders.com/lineups/mlb?date=2023-10-07&site=draftkings"
+    schedule_page_url = f"https://rotogrinders.com/lineups/mlb?date=2023-06-30&site=draftkings"
     schedule_page = requests.get(schedule_page_url, headers = {'User-Agent':"Mozilla/5.0"})
     schedule = BeautifulSoup(schedule_page.text, 'html.parser')
     
@@ -413,47 +428,279 @@ with app.app_context():
 
         name = unidecode(away_pitcher.select('a')[0].text)
         salary = away_pitcher.select('span.salary')[0].text.replace(' ','').replace('\n','').replace('$','').replace('K','')
+        arm = away_pitcher.select('.stats')[0].text.replace(' ','').replace('\n','')[0]
         player_dict = {"name":name,
-                "position":"SP",
+                "position":["SP"],
                 "salary":salary,
-                "team":away}
+                "team":away,
+                "side":arm,
+                "value":random_number(salary)}
         player_list.append(player_dict)
 
         for hitter in away_hitters:
             name = unidecode(hitter.select('a')[0].text)
-            position = hitter.select('span.position')[0].text.replace(' ','').replace('\n','')
-            salary = hitter.select('span.salary')[0].text.replace(' ','').replace('\n','').replace('$','').replace('K','')
+            stat_group = hitter.select('span.stats')[0]
+            bat = stat_group.select('span.stats')[0].text.replace('\n','').replace(' ','')
+            #make an array of positions
+            positions = stat_group.select('span.position')[0].text.replace('\n','').replace(' ','').split('/')
+            salary = stat_group.select('span.salary')[0].text.replace('\n','').replace(' ','').replace('$','').replace('K','')
             player_dict = {"name":name,
-                "position":position,
+                "position":positions,
                 "salary":salary,
-                "team":away}
+                "team":away,
+                "side":bat,
+                "value":random_number(salary)}
             player_list.append(player_dict)
 
 
         #home players
 
         home_pitcher = game.select('div.pitcher')[1]
+        home_hitters = game.select('ul.players')[1].select('li')
 
         name = unidecode(home_pitcher.select('a')[0].text)
         salary = home_pitcher.select('span.salary')[0].text.replace(' ','').replace('\n','').replace('$','').replace('K','')
+        arm = home_pitcher.select('.stats')[0].text.replace(' ','').replace('\n','')[0]
         player_dict = {"name":name,
-                "position":"SP",
+                "position":["SP"],
                 "salary":salary,
-                "team":home}
+                "team":away,
+                "side":arm,
+                "value":random_number(salary)}
         player_list.append(player_dict)
         
-        home_hitters = game.select('ul.players')[1].select('li')
+        
 
         for hitter in home_hitters:
             name = unidecode(hitter.select('a')[0].text)
-            position = hitter.select('span.position')[0].text.replace(' ','').replace('\n','')
-            salary = hitter.select('span.salary')[0].text.replace(' ','').replace('\n','').replace('$','').replace('K','')
+            stat_group = hitter.select('span.stats')[0]
+            bat = stat_group.select('span.stats')[0].text.replace('\n','').replace(' ','')
+            #make an array of positions
+            positions = stat_group.select('span.position')[0].text.replace('\n','').replace(' ','').split('/')
+            salary = stat_group.select('span.salary')[0].text.replace('\n','').replace(' ','').replace('$','').replace('K','')
             player_dict = {"name":name,
-                "position":position,
+                "position":positions,
                 "salary":salary,
-                "team":home}
+                "team":away,
+                "side":bat,
+                "value":random_number(salary)}
             player_list.append(player_dict)
     
+
+
+    sorted_players = sorted(player_list,key=itemgetter('value'))
+    sorted_players.reverse()
+
+    pitchers = 0
+    catchers = 0
+    first = 0
+    second = 0
+    short = 0
+    third = 0
+    outfielders = 0
+
+    dk_players = []
+    dk_counter = 0
+
+    for player in sorted_players:
+        if "SP" in player["position"] and pitchers<2:
+            player["dk_position"]="SP"
+            dk_players.append(player)
+            pitchers+=1
+        elif "C" in player["position"] and catchers==0:
+            player["dk_position"]="C"
+            dk_players.append(player)
+            catchers+=1
+        elif "1B" in player["position"] and first==0:
+            player["dk_position"]="1B"
+            dk_players.append(player)
+            first+=1
+        elif "2B" in player["position"] and second==0:
+            player["dk_position"]="2B"
+            dk_players.append(player)
+            second+=1
+        elif "3B" in player["position"] and third==0:
+            player["dk_position"]="3B"
+            dk_players.append(player)
+            third+=1
+        elif "SS" in player["position"] and short==0:
+            player["dk_position"]="SS"
+            dk_players.append(player)
+            short+=1
+        elif ("RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]) and outfielders<3:
+            player["dk_position"]="OF"
+            dk_players.append(player)
+            outfielders+=1
+        if len(dk_players)<=10:
+            dk_counter+=1
+
+    total_salary = sum([float(player["salary"]) for player in dk_players])
+    if total_salary > 50:
+        print("Too High")
+        print(total_salary)
+        removed_players = []
+        # new_list = sorted_players[counter:]      
+        for player in sorted_players:
+            if player not in dk_players:
+                if "SP" in player["position"]:
+                    pitcher_array = [player for player in dk_players if player["dk_position"]=="SP"]
+                    last_loss = pitcher_array[-1]
+                    dk_players.remove(last_loss)
+                    removed_players.append(last_loss)
+                    player["dk_position"]="SP"
+                    dk_players.append(player)
+                elif "C" in player["position"]:
+                    last_loss = [player for player in dk_players if player["dk_position"]=="C"]
+                    try:
+                        last_loss = last_loss[0]
+                    except IndexError:
+                        ipdb.set_trace()
+                    dk_players.remove(last_loss)
+                    removed_players.append(last_loss)
+                    player["dk_position"]="C"
+                    dk_players.append(player)
+                elif "1B" in player["position"]:
+                    last_loss = [player for player in dk_players if player["dk_position"]=="1B"]
+                    try:
+                        last_loss = last_loss[0]
+                    except IndexError:
+                        ipdb.set_trace()
+                    dk_players.remove(last_loss)
+                    removed_players.append(last_loss)
+                    player["dk_position"]="1B"
+                    dk_players.append(player)
+                elif "2B" in player["position"]:
+                    last_loss = [player for player in dk_players if player["dk_position"]=="2B"]
+                    try:
+                        last_loss = last_loss[0]
+                    except IndexError:
+                        ipdb.set_trace()
+                    dk_players.remove(last_loss)
+                    removed_players.append(last_loss)
+                    player["dk_position"]="2B"
+                    dk_players.append(player)
+                elif "3B" in player["position"]:
+                    last_loss = [player for player in dk_players if player["dk_position"]=="3B"]
+                    try:
+                        last_loss = last_loss[0]
+                    except IndexError:
+                        ipdb.set_trace()
+                    dk_players.remove(last_loss)
+                    removed_players.append(last_loss)
+                    player["dk_position"]="3B"
+                    dk_players.append(player)
+                elif "SS" in player["position"]:
+                    last_loss = [player for player in dk_players if player["dk_position"]=="SS"]
+                    try:
+                        last_loss = last_loss[0]
+                    except IndexError:
+                        ipdb.set_trace()
+                    dk_players.remove(last_loss)
+                    removed_players.append(last_loss)
+                    player["dk_position"]="SS"
+                    dk_players.append(player)
+
+                elif [player for player in dk_players if "RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]]:
+                    outfielder_array =  [player for player in dk_players if player["dk_position"]=="OF"]
+                    last_loss = outfielder_array[-1]
+                    dk_players.remove(last_loss)
+                    removed_players.append(last_loss)
+                    player["dk_position"]="OF"
+                    dk_players.append(player)
+                if len(dk_players)<=10:
+                    dk_counter+=1
+                total_salary = sum([float(player["salary"]) for player in dk_players])
+                if total_salary < 50:
+                    break   
+
+        
+        removed_players = removed_players[0:len(removed_players)-1]
+        if len(removed_players) > 0:
+            for player in removed_players:
+                if "SP" in player["position"]:
+                    pitcher_array = [player for player in dk_players if "SP" in player["position"]]
+                    last_loss = pitcher_array[-1]
+                    everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
+                    salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
+                    new_total_salary = salary_with_nine + float(last_loss["salary"])
+                    if  total_salary < new_total_salary <=50:
+                        dk_players.remove(last_loss)
+                        dk_players.append(player)
+                elif "C" in player["position"]:
+                    last_loss = [player for player in dk_players if "C" in player["position"]]
+                    try:
+                        last_loss = last_loss[0]
+                    except IndexError:
+                        ipdb.set_trace()
+                    everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
+                    salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
+                    new_total_salary = salary_with_nine + float(last_loss["salary"])
+                    if  total_salary < new_total_salary <=50:
+                        dk_players.remove(last_loss)
+                        dk_players.append(player)
+                elif "1B" in player["position"]:
+                    last_loss = [player for player in dk_players if "1B" in player["position"]]
+                    try:
+                        last_loss = last_loss[0]
+                    except IndexError:
+                        ipdb.set_trace()
+                    everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
+                    salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
+                    new_total_salary = salary_with_nine + float(last_loss["salary"])
+                    if  total_salary < new_total_salary <=50:
+                        dk_players.remove(last_loss)
+                        dk_players.append(player)
+                elif "2B" in player["position"]:
+                    last_loss = [player for player in dk_players if "2B" in player["position"]]
+                    try:
+                        last_loss = last_loss[0]
+                    except IndexError:
+                        ipdb.set_trace()
+                    everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
+                    salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
+                    new_total_salary = salary_with_nine + float(last_loss["salary"])
+                    if  total_salary < new_total_salary <=50:
+                        dk_players.remove(last_loss)
+                        dk_players.append(player)
+                elif "3B" in player["position"]:
+                    last_loss = [player for player in dk_players if "3B" in player["position"]]
+                    try:
+                        last_loss = last_loss[0]
+                    except IndexError:
+                        ipdb.set_trace()
+                    everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
+                    salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
+                    new_total_salary = salary_with_nine + float(last_loss["salary"])
+                    if  total_salary < new_total_salary <=50:
+                        dk_players.remove(last_loss)
+                        dk_players.append(player)
+                elif "SS" in player["position"]:
+                    last_loss = [player for player in dk_players if "SS" in player["position"]]
+                    try:
+                        last_loss = last_loss[0]
+                    except IndexError:
+                        ipdb.set_trace()
+                    everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
+                    salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
+                    new_total_salary = salary_with_nine + float(last_loss["salary"])
+                    if  total_salary < new_total_salary <=50:
+                        dk_players.remove(last_loss)
+                        dk_players.append(player)
+                elif ("RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]) and outfielders<3:
+                    outfielder_array = [player for player in dk_players if "RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]]
+                    last_loss = outfielder_array[-1]
+                    everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
+                    salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
+                    new_total_salary = salary_with_nine + float(last_loss["salary"])
+                    if  total_salary < new_total_salary <=50:
+                        dk_players.remove(last_loss)
+                        dk_players.append(player)
+
+        
+
+
+
+    ipdb.set_trace()
 
     #parse espn injury page
     injury_url = "https://www.espn.com/mlb/injuries"
@@ -710,200 +957,113 @@ with app.app_context():
 
                     
                     #get latest matchups vs pitcher
-                    #check recent minutes
-
-                    
-                    abs_vs_opponent = [ab for ab in abs if (ab.pitcher.name==pitcher_name)][-4:]
+                    abs_vs_opponent = [ab for ab in abs if (ab.pitcher.name==pitcher_name)][-15:]
 
 
                     ipdb.set_trace()
 
-                
+                    #other things I need
 
-                    #opponent stat allowed to position
-
-                    opponent_games = Game.query.filter(or_(Game.visitor==other_team,Game.home==other_team))[-12:]
-                    team_games = Game.query.filter(or_(Game.visitor==player_team,Game.home==player_team))[-12:]
-                    team_games_players = [game.players for game in team_games]
-                    team_players = (list(itertools.chain.from_iterable(team_games_players)))
-                    position_player_games = [game for game in team_players if (game.team==player_team and game.player.position==current_player.position)]
-                    position_player_names = [game.player.name for game in position_player_games]
-                    new_position_player_names = set(position_player_names)
-                    uniq_position_player_names = list(new_position_player_names)
-                    different_players = [{game.player.name:game.minutes} for game in position_player_games]
-
-                    position_player_minutes = {}
-
-                    for player in uniq_position_player_names:
-                        minutes_array = []
-                        for value in different_players:
-                            for team_player,team_player_minutes in value.items():
-                                if player==team_player:
-                                    minutes_array.append(team_player_minutes)
-                        position_player_minutes[player]=(mean(minutes_array))
-
-                
-
-                    # sorted_position_minutes = sorted(position_player_minutes.items(),key=lambda kv: (kv[1],kv[0]))
-                    # sorted_position_minutes.reverse()
-
-                    # current_player_depth = 0
-
-                    # for index,value in enumerate(sorted_position_minutes):
-                    #     if value[0]==player_name:
-                    #         current_player_depth=index+1
-                    #         break
+                    #abs vs lefty/righty 
 
 
-                    
-                    
-                            
-                    #check every team for the position and depth except for other_team
-                        #loop through all their games against the other team to check for average stats
-                        #loop through all their games against everyone but other_team
-                        #compare the averages
-                        #average the averages and get a multiplier that you will use at the end
+
+                    #babip and hard hit avg are modifiers
+
+                    #babip
+                        #compare pitchers allowed babip to hitter's babip
+
+                    #hard hit batting avg
+                        #same as babip
+                    #at stadium
+                    at_stadium = [ab for ab in abs if ab.game.location == game["stadium"]] 
+
+                    #with wind direction
+                    wind_high = wind_direction + 22.5
+                    wind_low = wind_direction - 22.5
+
+                    wind_direction_abs = [ab for ab in abs if wind_low < ab.game.wind_direction < wind_high]
+
+                    #wind speed
+                    wind_speed_high = wind_speed + 3
+                    wind_speed_low = wind_speed - 3
+
+                    wind_speed_abs = [ab for ab in abs if wind_speed_low < ab.game.wind_speed < wind_speed_high]
 
 
-                    team_list = ["Atlanta Hawks",
-                    "Boston Celtics",
-                    "Charlotte Hornets",
-                    "Chicago Bulls",
-                    "Cleveland Cavaliers",
-                    "Dallas Mavericks",
-                    "Denver Nuggets",
-                    "Detroit Pistons",
-                    "Golden State Warriors",
-                    "Houston Rockets",
-                    "Indiana Pacers",
-                    "Los Angeles Clippers",
-                    "Los Angeles Lakers",
-                    "Memphis Grizzlies",
-                    "Miami Heat",
-                    "Milwaukee Bucks",
-                    "Minnesota Timberwolves",
-                    "New Orleans Pelicans",
-                    "New York Knicks",
-                    "Brooklyn Nets",
-                    "Oklahoma City Thunder",
-                    "Orlando Magic",
-                    "Philadelphia 76ers",
-                    "Phoenix Suns",
-                    "Portland Trail Blazers",
-                    "Sacramento Kings",
-                    "Toronto Raptors",
-                    "Utah Jazz",
-                    "Washington Wizards",
-                    "San Antonio Spurs"]
-
-                    
-
-                    team_list.remove(player_team)
-                    team_list.remove(other_team)
-
-                    points_modifier_array=[]
-                    assists_modifier_array=[]
-                    trb_modifier_array=[]
-
-                
-                    
-                    
-                    for team in team_list:
 
 
-                        team_games_array = []
-                        uniq_players = []
-                        team_games = Game.query.filter(or_(Game.visitor==team,Game.home==team))[-12:]
-                        team_games_players = [game.players for game in team_games]
-                        team_players = (list(itertools.chain.from_iterable(team_games_players)))
-                        position_player_games = [game for game in team_players if (game.team==team and game.player.position==current_player.position)]
-                        position_player_names = [game.player.name for game in position_player_games]
-                        new_position_player_names = set(position_player_names)
-                        uniq_position_player_names = list(new_position_player_names)
-                        different_players = [{game.player.name:game.minutes} for game in position_player_games]
-
-                        position_player_minutes = {}
-                        for name in uniq_position_player_names:
-                            uniq_players.append(name)
-
-                        for player in uniq_position_player_names:
-                            minutes_array = []
-                            for value in different_players:
-                                for team_player,team_player_minutes in value.items():
-                                    if player==team_player:
-                                        minutes_array.append(team_player_minutes)
-
-                            average = mean(minutes_array)
-                            error = average * .55
-                            for game in position_player_games:
-                                if game.player.name==player and average-error < game.minutes < average+error:
-                                    team_games_array.append(game)
-
-                    
-
-                        # sorted_position_minutes = sorted(position_player_minutes.items(),key=lambda kv: (kv[1],kv[0]))
-                        # sorted_position_minutes.reverse()
+                    #sunny/cloudy
+                    #Overcast, Sunny, Cloudy, In Dome
+                    if game["cloud_or_sun"]=="Cloudy":
+                        cloud_or_sun_abs = [ab for ab in abs if ab.game.cloud_or_sun=="Cloudy" or ab.game.cloud_or_sun=="Overcast"]
+                    elif game["cloud_or_sun"]=="Sunny":
+                        cloud_or_sun_abs = [ab for ab in abs if ab.game.cloud_or_sun=="Sunny"]
+                    else:
+                        cloud_or_sun_abs = []
 
 
-                        # if (len(sorted_position_minutes)>0 and len(sorted_position_minutes)>=current_player_depth):
-                    # same_position_player = sorted_position_minutes[current_player_depth-1][0]
+                    #precipitation
+                    if game["precipitation"]=="Rain":
+                        precipitation_abs = [ab for ab in abs if ab.game.precipitation=="Rain" or ab.game.precipitation=="Drizzle"]
+                    elif game["precipitation"]=="Snow":
+                        precipitation_abs = [ab for ab in abs if ab.game.precipitation=="Snow"]
+                    else:
+                        precipitation_abs = []
 
 
-                        for player in uniq_players:
-                            player_object = Player.query.filter(Player.name==player).first()
+                    #temperature
+                    freezing = 35
+                    real_cold = 42
+                    very_cold = 47
+                    cold = 62
+                    nice = 78
+                    hot = 88
+                    too_hot = 97
 
-                            if len([game for game in player_object.games if (game.game.home==other_team or game.game.visitor==other_team)])>0:
+                    if game["temperature"] <= freezing:
+                        temperature_abs = [ab for ab in abs if ab.game.temperature <= freezing]
+                    elif freezing < game["temperature"] <= real_cold:
+                        temperature_abs = [ab for ab in abs if freezing < ab.game.temperature <= real_cold]
+                    elif real_cold < game["temperature"] <= very_cold:
+                        temperature_abs = [ab for ab in abs if real_cold < ab.game.temperature <= very_cold]
+                    elif very_cold < game["temperature"] <= cold:
+                        temperature_abs = [ab for ab in abs if very_cold < ab.game.temperature <= cold]
+                    elif cold < game["temperature"] <= nice:
+                        temperature_abs = [ab for ab in abs if cold < ab.game.temperature <= nice]
+                    elif nice < game["temperature"] <= hot:
+                        temperature_abs = [ab for ab in abs if nice < ab.game.temperature <= hot]
+                    elif hot < game["temperature"] <= too_hot:
+                        temperature_abs = [ab for ab in abs if hot < ab.game.temperature <= too_hot]
+                    else:
+                        temperature_abs = [ab for ab in abs if ab.game.temperature > too_hot]
 
-                                team_player_games_against_opp = [game for game in player_object.games if (game.game.home==other_team or game.game.visitor==other_team)][-4:]
-                                team_player_games_the_rest = [game for game in team_games_array if (game.player.name==player and game.game.home!=other_team and game.game.visitor!=other_team)]
+                    #vs team
+                    abs_vs_team = [ab for ab in abs if ab.game.home==other_team or ab.game.visitor==other_team]
 
 
-                                opponent_assists_mean = mean([game.assists for game in team_player_games_against_opp])
-                                rest_assists_mean = mean([game.assists for game in team_player_games_the_rest]) if len(team_player_games_the_rest)>0 else 1
 
-                                opponent_points_mean = mean([game.points for game in team_player_games_against_opp])
-                                rest_points_mean = mean([game.points for game in team_player_games_the_rest]) if len(team_player_games_the_rest)>0 else 1
+                    #stats to measure
+                        #for hitters
+                            #hits
+                            #walks
+                            #strikeouts
+                            #rbi
+                            #runs
+                            #sbs
 
-                                opponent_trb_mean = mean([game.trb for game in team_player_games_against_opp])
-                                rest_trb_mean = mean([game.trb for game in team_player_games_the_rest]) if len(team_player_games_the_rest)>0 else 1
+                        #for pitchers
+                            #innings pitched
+                            #strikeouts
+                            #walks
+                            #earned runs
 
-                                player_assists_modifier = opponent_assists_mean/rest_assists_mean if rest_assists_mean > 0 else 1
-                                player_points_modifier = opponent_points_mean/rest_points_mean if rest_points_mean > 0 else 1
-                                player_trb_modifier = opponent_trb_mean/rest_trb_mean if rest_trb_mean > 0 else 1
 
-                                if player_points_modifier < 2:
-                                    points_modifier_array.append(player_points_modifier)
-                                else:
-                                    points_modifier_array.append(2)
-                                if player_assists_modifier < 2:
-                                    assists_modifier_array.append(player_assists_modifier)
-                                else:
-                                    assists_modifier_array.append(2)
-                                if player_trb_modifier < 2:
-                                    trb_modifier_array.append(player_trb_modifier)
-                                else:
-                                    trb_modifier_array.append(2)
-                    
-                    assists_modifier = round(mean(assists_modifier_array),2)
-                    trb_modifier = round(mean(trb_modifier_array),2)
-                    points_modifier = round(mean(points_modifier_array),2)
+                    #find if people steal more often against that pitcher than the league average
+                        #grab at bats where someone gets on first with a clear path to second and steals vs doesn't
+                    #find what correlates best with standard deviation. 
+                    #lowest stdev will be worth most and vice versa
 
-                    todays_weekday = current_date.weekday()
-
-                    games_on_specific_day = [game for game in games_to_use if game.game.date.weekday()==todays_weekday]
-                    latest_games_on_day = games_on_specific_day[-4:]
-
-                    if len(games_on_specific_day)>0:
-
-                        if "points" in player_and_odds[1]:
-                            weekday_points_modifier = round(mean([game.points-player_and_odds[1]["points"] for game in games_on_specific_day]),2)
-                            weekday_games.append({"name":player_name,"prop":"points","value":weekday_points_modifier,"line":player_and_odds[1]["points"]})
-                        if "assists" in player_and_odds[1]:
-                            weekday_assists_modifier = round(mean([game.assists-player_and_odds[1]["assists"] for game in games_on_specific_day]),2)
-                            weekday_games.append({"name":player_name,"prop":"assists","value":weekday_assists_modifier,"line":player_and_odds[1]["assists"]})
-                        if "rebounds" in player_and_odds[1]:
-                            weekday_rebounds_modifier = round(mean([game.trb-player_and_odds[1]["rebounds"] for game in games_on_specific_day]),2)
-                            weekday_games.append({"name":player_name,"prop":"rebounds","value":weekday_rebounds_modifier,"line":player_and_odds[1]["rebounds"]})
 
 
 
@@ -934,444 +1094,37 @@ with app.app_context():
                     uniq_game_list = [game for game in uniq_game_list]
 
 
-                    assists_consistency = 0
-                    points_consistency = 0
-                    trb_consistency = 0
 
-                    assists_teaser_value = 0
-                    points_teaser_value = 0
-                    trb_teaser_value = 0
+    #make a draftkings algorithm
 
-                    points_values = [8,10,12,15,18,20,25,30]
-
-                    denominator = len(uniq_game_list)
-                    if "points" in player_and_odds[1]:
-                        points_teaser = player_and_odds[1]["points"]-1.5
-                        if points_teaser > 8:
-                            while points_teaser > 8:
-                                points_teaser -=.5
-                                if points_teaser in points_values:
-                                    break
-                            if points_teaser > 7:
-                                points_teaser_less = points_values[points_values.index(points_teaser)-1]
-                            else:
-                                points_teaser_less = points_teaser
-                        else:
-                            points_teaser_less = points_teaser
-
-                    if "assists" in player_and_odds[1]:
-                        assists_teaser = player_and_odds[1]["assists"]-1.5
-                        if assists_teaser > 2:
-                            assists_teaser_less = assists_teaser-1
-                        else:
-                            assists_teaser_less = assists_teaser
-                        
-                    
-
-                    if "rebounds" in player_and_odds[1]:
-                        rebounds_teaser = player_and_odds[1]["rebounds"]-1.5
-                        if rebounds_teaser > 2:
-                            trb_teaser_less = rebounds_teaser-1
-                        else:
-                            trb_teaser_less = rebounds_teaser
-                
-
-                    for game in uniq_game_list:
-                        if "points" in player_and_odds[1]:
-                            if game.points > player_and_odds[1]["points"]:
-                                points_consistency +=1
-                            if game.points > points_teaser:
-                                points_teaser_value+=1
-                        else:
-                            points_consistency = .5*denominator
-                        if "assists" in player_and_odds[1]:
-                            if game.assists > player_and_odds[1]["assists"]:
-                                assists_consistency +=1
-                            if game.assists > assists_teaser:
-                                assists_teaser_value+=1
-                        else:
-                            assists_consistency = .5*(denominator)
-                        if "rebounds" in player_and_odds[1]:
-                            if game.trb > player_and_odds[1]["rebounds"]:
-                                trb_consistency +=1
-                            if game.trb > rebounds_teaser:
-                                trb_teaser_value+=1
-                        else:
-                            trb_consistency = .5*denominator
-
-
-
-                    points_consistency = points_consistency/denominator
-                    assists_consistency = assists_consistency/denominator
-                    trb_consistency = trb_consistency/denominator
-
-
-                    if denominator > 0:
-
-                        recent_games = games_to_use[-40:]
-                        recent_games.reverse()
-
-                        assists_list = [game.assists for game in uniq_game_list]
-                        points_list = [game.points for game in uniq_game_list]
-                        trb_list = [game.trb for game in uniq_game_list]
-
-                        assists_factor = mean(assists_list)
-                        points_factor = mean(points_list)
-                        trb_factor = mean(trb_list)
-
-                        assists_predict = round((0.6*assists_factor+0.4*assists_similar)*assists_modifier*(assists_consistency/2+.75),2)
-                        points_predict = round((0.6*points_factor+0.4*points_similar)*points_modifier*(points_consistency/2+.75),2)
-                        trb_predict = round((0.6*trb_factor+0.4*trb_similar)*trb_modifier*(trb_consistency/2+.75),2)
-
-
-                        if "points" in player_and_odds[1]:
-                            points_games_in_a_row = 0
-                            for game in recent_games:
-                                    if game.points >= points_teaser:
-                                        points_games_in_a_row+=1
-                                    else:
-                                        break
-                            if points_teaser > 7:
-                                value = round(points_teaser_value/denominator,2)
-                                games_in_a_row.append({"name":player_name,"prop":"points","value":value,"teaser":points_teaser,"modifier":points_modifier,"proj":points_predict,"data_points":denominator,"games_straight":points_games_in_a_row,"total_value":round((.4*value+.45*points_modifier+.15*points_games_in_a_row/15),2)})
-
-                        if "assists" in player_and_odds[1]:            
-                            assists_games_in_a_row = 0
-                            for game in recent_games:
-                                    if game.assists >=assists_teaser:
-                                        assists_games_in_a_row+=1
-                                    else:
-                                        break
-                            if assists_teaser > 1:
-                                value = round(assists_teaser_value/denominator,2)
-                                games_in_a_row.append({"name":player_name,"prop":"assists","value":value,"teaser":assists_teaser,"modifier":assists_modifier,"proj":assists_predict,"data_points":denominator,"games_straight":assists_games_in_a_row,"total_value":round((.4*value+.45*assists_modifier+.15*assists_games_in_a_row/15),2)})
-
-
-                        if "rebounds" in player_and_odds[1]:
-                            rebounds_games_in_a_row = 0
-                            for game in recent_games:
-                                    if game.trb >= rebounds_teaser:
-                                        rebounds_games_in_a_row+=1
-                                    else:
-                                        break
-                            if rebounds_teaser > 2:
-                                value = round(trb_teaser_value/denominator,2)
-                                games_in_a_row.append({"name":player_name,"prop":"rebounds","value":value,"teaser":rebounds_teaser,"modifier":trb_modifier,"proj":trb_predict,"data_points":denominator,"games_straight":rebounds_games_in_a_row,"total_value":round((.4*value+.45*trb_modifier+.15*rebounds_games_in_a_row/15),2)})
-
-
-                        if points_teaser_value > .8* denominator and points_teaser >=8 and points_predict > player_and_odds[1]["points"]:
-                            value = round(points_teaser_value/denominator,2)
-                            player_object = {"name":player_name,"prop":"points","value":value,"teaser":points_teaser,"modifier":points_modifier,"proj":points_predict,"data_points":denominator,"games_straight":points_games_in_a_row}
-                            high_value_teasers.append(player_object)
-                        elif points_teaser_value == 0:
-                            pass
-                        else:
-                            points_teaser_less_value = 0
-                            for game in uniq_game_list:
-                                if "points" in player_and_odds[1]:
-                                    if game.points > points_teaser_less:
-                                        points_teaser_less_value+=1
-                            if points_teaser_less_value > .75*denominator and points_teaser_less >= 8 and points_predict > player_and_odds[1]["points"]:
-                                value = round(points_teaser_less_value/denominator,2)
-                                games_straight = 0
-                                for game in recent_games:
-                                    if game.points > points_teaser_less:
-                                        games_straight+=1
-                                    else:
-                                        break
-                                player_object = {"name":player_name,"prop":"points","value":value,"teaser":points_teaser_less,"modifier":points_modifier,"proj":points_predict,"data_points":denominator,"games_straight":games_straight}
-                                low_value_teasers.append(player_object)
-
-                        if assists_teaser_value > .8* denominator and assists_teaser >=2 and points_predict > player_and_odds[1]["assists"]:
-                            value = round(assists_teaser_value/denominator,2)
-                            player_object = {"name":player_name,"prop":"assists","value":value,"teaser":assists_teaser,"modifier":assists_modifier,"proj":assists_predict,"data_points":denominator,"games_straight":assists_games_in_a_row}
-                            high_value_teasers.append(player_object)
-                        elif assists_teaser_value == 0:
-                            pass
-                        else:
-                            assists_teaser_less_value = 0
-                            for game in uniq_game_list:
-                                if "points" in player_and_odds[1]:
-                                    if game.assists > assists_teaser_less:
-                                        assists_teaser_less_value+=1
-                            if assists_teaser_less_value > .75*denominator and assists_teaser_less >=2 and assists_predict > player_and_odds[1]["assists"]:
-                                value = round(assists_teaser_less_value/denominator,2)
-                                games_straight = 0
-                                for game in recent_games:
-                                    if game.assists > assists_teaser_less:
-                                        games_straight+=1
-                                    else:
-                                        break
-                                player_object = {"name":player_name,"prop":"assists","value":value,"teaser":assists_teaser_less,"modifier":assists_modifier,"proj":assists_predict,"data_points":denominator,"games_straight":games_straight}
-                                low_value_teasers.append(player_object)
-
-                        if trb_teaser_value > .8* denominator and rebounds_teaser >=3 and trb_predict > player_and_odds[1]["rebounds"]:
-                            value = round(trb_teaser_value/denominator,2)
-                            
-                            player_object = {"name":player_name,"prop":"rebounds","value":value,"teaser":rebounds_teaser,"modifier":trb_modifier,"proj":trb_predict,"data_points":denominator,"games_straight":rebounds_games_in_a_row}
-                            high_value_teasers.append(player_object)
+        #roster
+            #2 P
+            #1 C
+            #1 1B
+            #1 2B
+            #1 SS
+            #1 3B
+            #3 OF
         
-                        elif trb_teaser_value == 0:
-                            pass
-                        else:
-                            trb_teaser_less_value = 0
-                            for game in uniq_game_list:
-                                if "rebounds" in player_and_odds[1]:
-                                    if game.trb > trb_teaser_less:
-                                        trb_teaser_less_value+=1
-                            if trb_teaser_less_value > .75*denominator and trb_teaser_less >=2 and trb_predict > player_and_odds[1]["rebounds"]:
-                                value = round(trb_teaser_less_value/denominator,2)
-                                games_straight = 0
-                                for game in recent_games:
-                                    if game.trb > trb_teaser_less:
-                                        games_straight+=1
-                                    else:
-                                        break
-                                player_object = {"name":player_name,"prop":"rebounds","value":value,"teaser":trb_teaser_less,"modifier":trb_modifier,"proj":trb_predict,"data_points":denominator,"games_straight":games_straight}
-                                low_value_teasers.append(player_object)
+        #Salary Cap = $50,000
 
-                        assist_bet = "none"
-                        trb_bet = "none"
-                        points_bet = "none"
-                        pra_dict = []
-
-                        if pra_switch:
-
-                            if "pra" in player_and_odds[1]:
-                                pra_predict = assists_predict + points_predict + trb_predict
-                                pra_diff = round(pra_predict - player_and_odds[1]["pra"],2)
-                                if pra_diff < 0:
-                                    pra_bet = "Under"
-                                else:
-                                    pra_bet = "Over"
-                                pra_diff_abs = abs(pra_diff)
-                                pra_perc = round((abs(pra_predict-player_and_odds[1]["pra"])/player_and_odds[1]["pra"]),2)
-                                pra_dict = {"name": player_name, 
-                                            "prop":"pra",
-                                            "line": player_and_odds[1]["pra"],
-                                            "projected": round(pra_predict,2),
-                                            "perc": pra_perc,
-                                            "diff": pra_diff_abs,
-                                            "bet": pra_bet}
-
-                                if pra_dict["perc"] > .9 or pra_dict["diff"] > 10:
-                                    bets.append(pra_dict)
-
-                            if "points" in player_and_odds[1] and "rebounds" in player_and_odds[1]:
-                                pr_predict = points_predict + trb_predict
-                                pr_line = player_and_odds[1]["points"]+player_and_odds[1]["rebounds"]
-                                pr_diff = round((pr_predict - pr_line),2)
-                                if pr_diff < 0:
-                                    pr_bet = "Under"
-                                else:
-                                    pr_bet = "Over"
-                                pr_diff_abs = abs(pr_diff)
-                                pr_perc = round((abs(pr_predict-pr_line)/pr_line),2)
-                                pr_dict = {"name": player_name, 
-                                            "prop":"pr",
-                                            "line": pr_line,
-                                            "projected": round(pr_predict,2),
-                                            "perc": pr_perc,
-                                            "diff": pr_diff_abs,
-                                            "bet": pr_bet}
-
-                                if pra_dict not in bets:
-
-                                    if pr_dict["perc"] > .7 or pr_dict["diff"] > 9:
-                                        bets.append(pr_dict)
-                            
-
-                            if "points" in player_and_odds[1] and "assists" in player_and_odds[1]:
-                                pa_predict = points_predict + assists_predict
-                                pa_line = player_and_odds[1]["points"]+player_and_odds[1]["assists"]
-                                pa_diff = round((pa_predict - pa_line),2)
-                                if pa_diff < 0:
-                                    pa_bet = "Under"
-                                else:
-                                    pa_bet = "Over"
-                                pa_diff_abs = abs(pa_diff)
-                                pa_perc = round((abs(pa_predict-pa_line)/pa_line),2)
-                                pa_dict = {"name": player_name, 
-                                            "prop":"pa",
-                                            "line": pa_line,
-                                            "projected": round(pa_predict,2),
-                                            "perc": pa_perc,
-                                            "diff": pa_diff_abs,
-                                            "bet": pa_bet}
-
-                                if pra_dict not in bets:
-
-                                    if pa_dict["perc"] > .7 or pa_dict["diff"] > 9:
-                                        bets.append(pa_dict)
-
-
-                            if "rebounds" in player_and_odds[1] and "assists" in player_and_odds[1]:
-                                ra_predict = trb_predict + assists_predict
-                                ra_line = player_and_odds[1]["rebounds"]+player_and_odds[1]["assists"]
-                                ra_diff = round((ra_predict - ra_line),2)
-                                if ra_diff < 0:
-                                    ra_bet = "Under"
-                                else:
-                                    ra_bet = "Over"
-                                ra_diff_abs = abs(ra_diff)
-                                ra_perc = round((abs(ra_predict-ra_line)/ra_line),2)
-                                ra_dict = {"name": player_name, 
-                                            "prop":"ra",
-                                            "line": ra_line,
-                                            "projected": round(ra_predict,2),
-                                            "perc": ra_perc,
-                                            "diff": ra_diff_abs,
-                                            "bet": ra_bet}
-
-
-                                if pra_dict not in bets:
-
-                                    if ra_dict["perc"] > .7 or ra_dict["diff"] > 9:
-                                        bets.append(ra_dict)
-
-
-
-                        if "assists" in player_and_odds[1]:
-                            assist_diff = round((assists_predict - player_and_odds[1]["assists"]),2)
-                            if assist_diff < 0:
-                                assist_bet = "Under"
-                            else:
-                                assist_bet = "Over"
-                            assist_diff_abs = abs(assist_diff)
-                            assist_perc = round((abs(assists_predict-player_and_odds[1]["assists"])/player_and_odds[1]["assists"]),2)
-                            assists_dict = {"name": player_name, 
-                                        "prop":"assists",
-                                        "line": player_and_odds[1]["assists"],
-                                        "projected": assists_predict,
-                                        "perc": assist_perc,
-                                        "diff": assist_diff_abs,
-                                        "bet": assist_bet}
-
-                            if pra_switch:
-                                if pra_dict not in bets and pa_dict not in bets and ra_dict not in bets:
-
-                                    if ((assists_dict["perc"] > .55 or assists_dict["diff"] > 6) and ((assists_predict > 9.4) or (player_and_odds[1]["assists"] > 9.4))):
-                                        bets.append(assists_dict)
-
-                            else:
-                                if ((assists_dict["perc"] > .55 or assists_dict["diff"] > 6) and ((assists_predict > 9.4) or (player_and_odds[1]["assists"] > 9.4))):
-                                        bets.append(assists_dict)
-
-                            # print(assists_dict)
-
-
-                            
-                        if "rebounds" in player_and_odds[1]:
-                            trb_diff = round((trb_predict - player_and_odds[1]["rebounds"]),2)
-                            if trb_diff < 0:
-                                trb_bet = "Under"
-                            else:
-                                trb_bet = "Over"
-                            trb_diff_abs = abs(trb_diff)
-                            trb_perc = round((abs(trb_predict-player_and_odds[1]["rebounds"])/player_and_odds[1]["rebounds"]),2)
-                            trb_dict = {"name": player_name, 
-                                        "prop": "rebounds",
-                                        "line": player_and_odds[1]["rebounds"],
-                                        "projected": trb_predict,
-                                        "perc": trb_perc,
-                                        "diff": trb_diff_abs,
-                                        "bet": trb_bet}
-
-                            if pra_switch:
-                                if pra_dict not in bets and ra_dict not in bets and pr_dict not in bets:
-
-                                    if ((trb_dict["perc"] > .55 or trb_dict["diff"] > 6) and ((trb_predict > 9.4) or (player_and_odds[1]["rebounds"] > 9.4))):
-                                        bets.append(trb_dict)
-
-                            else:
-                                if ((trb_dict["perc"] > .55 or trb_dict["diff"] > 6) and ((trb_predict > 9.4) or (player_and_odds[1]["rebounds"] > 9.4))):
-                                        bets.append(trb_dict)
-
-                            # print(trb_dict)
-
-
-                        if "points" in player_and_odds[1]:
-                            points_diff = round((points_predict - player_and_odds[1]["points"]),2)
-                            if points_diff < 0:
-                                points_bet = "Under"
-                            else:
-                                points_bet = "Over"
-
-
-                            points_diff_abs = abs(points_diff)
-                            points_perc = round((abs(points_predict-player_and_odds[1]["points"])/player_and_odds[1]["points"]),2)
-                        
-                            points_dict = {"name": player_name, 
-                                        "prop": "points",
-                                        "line": player_and_odds[1]["points"],
-                                        "projected": points_predict,
-                                        "perc": points_perc,
-                                        "diff": points_diff_abs,
-                                        "bet": points_bet}
-
-                            if pra_switch:
-                                if pra_dict not in bets and pa_dict not in bets and pr_dict not in bets:
-
-                                    if points_dict["perc"] > .5 or points_dict["diff"] > 6.2:
-                                        bets.append(points_dict)
-
-                            else:
-                                if points_dict["perc"] > .5 or points_dict["diff"] > 6.2:
-                                        bets.append(points_dict)
-
-                            # print(points_dict)
-
-                            # if player_name=="De'Aaron Fox":
-                            #     ipdb.set_trace()
-                            
-                # if player_name=="Zach Collins":
-                #     ipdb.set_trace()        
-
-                # if player_name=="P.J. Washington":
-                #     ipdb.set_trace()
-                # print(f"Points Multipler: {round(points_modifier,2)}")
-                # print(f"Assists Multipler: {round(assists_modifier,2)}")
-                # print(f"Trb Multipler: {round(trb_modifier,2)}")
-                # print(f"Points Consistency: {round(points_consistency/2+.75,2)}")
-                # print(f"Assists Consistency: {round(assists_consistency/2+.75,2)}")
-                # print(f"Trb Consistency: {round(trb_consistency/2+.75,2)}\n")
-                if points_predict>9.8 and assists_predict>9.8 and trb_predict>9.8:
-                    triple_doubles.append(player_name)
-                if ((points_predict>9.8 and assists_predict>9.8) or (assists_predict>9.8 and trb_predict>9.8) or (points_predict>9.8 and trb_predict>9.8)):
-                    double_doubles.append(player_name)
-
-
-                if "assists" in player_and_odds[1] and assists_predict > player_and_odds[1]["assists"]:
-                    consistency.append({"name":player_name,"stat":"assists","value":round(assists_consistency,2),"line":player_and_odds[1]["assists"]}) 
-                if "points" in player_and_odds[1]and points_predict > player_and_odds[1]["points"]:
-                    consistency.append({"name":player_name,"stat":"points","value":round(points_consistency,2),"line":player_and_odds[1]["points"]}) 
-                if "rebounds" in player_and_odds[1] and trb_predict > player_and_odds[1]["rebounds"]:
-                    consistency.append({"name":player_name,"stat":"trb","value":round(trb_consistency,2),"line":player_and_odds[1]["rebounds"]}) 
+    
+                    
+   
 
     
 
-    sorted_consistency = sorted(consistency,key=itemgetter('value'))
-    lowest_consistency = sorted_consistency[0:10]
-    highest_consistency = sorted_consistency[-10:]
-    highest_consistency.reverse()
+    # sorted_bets = sorted(bets,key=itemgetter('perc'))[-10:]
+    # sort_by_diff = sorted(bets,key=itemgetter('diff'))[-10:]
+    # sorted_by_total_value = sorted(games_in_a_row,key=itemgetter('total_value'))[-20:]
+    # sorted_by_total_value = [item for item in sorted_by_total_value if item["total_value"]>.8]
+    # sorted_by_total_value.reverse()
+    # sorted_by_games_straight = sorted(games_in_a_row,key=itemgetter('games_straight'))[-20:]
+    # sorted_by_games_straight.reverse()
+    # sorted_by_games_straight = [item for item in sorted_by_games_straight if item["games_straight"]>4]
 
-    sorted_high_value_teasers = sorted(high_value_teasers,key=itemgetter('value'))[-10:]
-    sorted_high_value_teasers.reverse()
-
-    sorted_low_value_teasers = sorted(low_value_teasers,key=itemgetter('value'))[-10:]
-    sorted_low_value_teasers.reverse()
-
-    sorted_bets = sorted(bets,key=itemgetter('perc'))[-10:]
-    sort_by_diff = sorted(bets,key=itemgetter('diff'))[-10:]
-    sorted_by_total_value = sorted(games_in_a_row,key=itemgetter('total_value'))[-20:]
-    sorted_by_total_value = [item for item in sorted_by_total_value if item["total_value"]>.8]
-    sorted_by_total_value.reverse()
-    sorted_by_games_straight = sorted(games_in_a_row,key=itemgetter('games_straight'))[-20:]
-    sorted_by_games_straight.reverse()
-    sorted_by_games_straight = [item for item in sorted_by_games_straight if item["games_straight"]>4]
-
-    weekday_games_sorted = sorted(weekday_games,key=itemgetter("value"))[-20:]
-    weekday_games_sorted.reverse()
+    # weekday_games_sorted = sorted(weekday_games,key=itemgetter("value"))[-20:]
+    # weekday_games_sorted.reverse()
         
     # for item in sorted_bets:
     #     name = item["name"]
@@ -1411,142 +1164,142 @@ with app.app_context():
     #     print(f"{name} {line} {stat}: {value}")
 
 
-    print("\nHigh value teasers\n")
+    # print("\nHigh value teasers\n")
 
-    for index, item in enumerate(sorted_high_value_teasers):
-        name=item["name"]
-        prop = item["prop"]
-        value = item["value"]
-        teaser = item["teaser"]
-        modifier = item["modifier"]
-        proj = item["proj"]
-        data_points = item["data_points"]
-        games_straight = item["games_straight"]
+    # for index, item in enumerate(sorted_high_value_teasers):
+    #     name=item["name"]
+    #     prop = item["prop"]
+    #     value = item["value"]
+    #     teaser = item["teaser"]
+    #     modifier = item["modifier"]
+    #     proj = item["proj"]
+    #     data_points = item["data_points"]
+    #     games_straight = item["games_straight"]
 
-        player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="high_value",FinalBet.category_value==(index+1)).all()
+    #     player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="high_value",FinalBet.category_value==(index+1)).all()
 
-        if len(player_data_list) > 0:
-            player_data = player_data_list[0]
-            player_data.name = name
-            player_data.prop = prop
-            player_data.line = teaser
-        else:
-            player = FinalBet(
-                category = "high_value",
-                algorithm = "B",
-                category_value = index+1,
-                date = full_date,
-                name = name,
-                prop = prop,
-                line = teaser
-            )
-            db.session.add(player)
-        db.session.commit()
+    #     if len(player_data_list) > 0:
+    #         player_data = player_data_list[0]
+    #         player_data.name = name
+    #         player_data.prop = prop
+    #         player_data.line = teaser
+    #     else:
+    #         player = FinalBet(
+    #             category = "high_value",
+    #             algorithm = "B",
+    #             category_value = index+1,
+    #             date = full_date,
+    #             name = name,
+    #             prop = prop,
+    #             line = teaser
+    #         )
+    #         db.session.add(player)
+    #     db.session.commit()
 
-        print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight})")
+    #     print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight})")
 
-    print("\nLow value teasers\n")
+    # print("\nLow value teasers\n")
 
-    for index, item in enumerate(sorted_low_value_teasers):
-        name=item["name"]
-        prop = item["prop"]
-        value = item["value"]
-        teaser = item["teaser"]
-        modifier = item["modifier"]
-        proj = item["proj"]
-        data_points = item["data_points"]
-        games_straight = item["games_straight"]
+    # for index, item in enumerate(sorted_low_value_teasers):
+    #     name=item["name"]
+    #     prop = item["prop"]
+    #     value = item["value"]
+    #     teaser = item["teaser"]
+    #     modifier = item["modifier"]
+    #     proj = item["proj"]
+    #     data_points = item["data_points"]
+    #     games_straight = item["games_straight"]
 
-        player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="low_value",FinalBet.category_value==(index+1)).all()
-        if len(player_data_list) > 0:
-            player_data = player_data_list[0]
-            player_data.name = name
-            player_data.prop = prop
-            player_data.line = teaser
-        else:
-            player = FinalBet(
-                category = "low_value",
-                algorithm = "B",
-                category_value = index+1,
-                date = full_date,
-                name = name,
-                prop = prop,
-                line = teaser
-            )
-            db.session.add(player)
-        db.session.commit()
+    #     player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="low_value",FinalBet.category_value==(index+1)).all()
+    #     if len(player_data_list) > 0:
+    #         player_data = player_data_list[0]
+    #         player_data.name = name
+    #         player_data.prop = prop
+    #         player_data.line = teaser
+    #     else:
+    #         player = FinalBet(
+    #             category = "low_value",
+    #             algorithm = "B",
+    #             category_value = index+1,
+    #             date = full_date,
+    #             name = name,
+    #             prop = prop,
+    #             line = teaser
+    #         )
+    #         db.session.add(player)
+    #     db.session.commit()
 
-        print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight})")
-
-
-    print("\nMost Games in a Row\n")
-
-    for index, item in enumerate(sorted_by_games_straight):
-        name=item["name"]
-        prop = item["prop"]
-        value = item["value"]
-        teaser = item["teaser"]
-        modifier = item["modifier"]
-        proj = item["proj"]
-        data_points = item["data_points"]
-        games_straight = item["games_straight"]
-
-        player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="games_in_a_row",FinalBet.category_value==(index+1)).all()
-        if len(player_data_list) > 0:
-            player_data = player_data_list[0]
-            player_data.name = name
-            player_data.prop = prop
-            player_data.line = teaser
-        else:
-            player = FinalBet(
-                category = "games_in_a_row",
-                algorithm = "B",
-                category_value = index+1,
-                date = full_date,
-                name = name,
-                prop = prop,
-                line = teaser
-            )
-            db.session.add(player)
-        db.session.commit()
-
-        print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight})")
+    #     print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight})")
 
 
+    # print("\nMost Games in a Row\n")
 
-    print("\nRanked by Total Value\n")
+    # for index, item in enumerate(sorted_by_games_straight):
+    #     name=item["name"]
+    #     prop = item["prop"]
+    #     value = item["value"]
+    #     teaser = item["teaser"]
+    #     modifier = item["modifier"]
+    #     proj = item["proj"]
+    #     data_points = item["data_points"]
+    #     games_straight = item["games_straight"]
 
-    for index, item in enumerate(sorted_by_total_value):
-        name=item["name"]
-        prop = item["prop"]
-        value = item["value"]
-        teaser = item["teaser"]
-        modifier = item["modifier"]
-        proj = item["proj"]
-        data_points = item["data_points"]
-        games_straight = item["games_straight"]
-        total_value = item["total_value"]
+    #     player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="games_in_a_row",FinalBet.category_value==(index+1)).all()
+    #     if len(player_data_list) > 0:
+    #         player_data = player_data_list[0]
+    #         player_data.name = name
+    #         player_data.prop = prop
+    #         player_data.line = teaser
+    #     else:
+    #         player = FinalBet(
+    #             category = "games_in_a_row",
+    #             algorithm = "B",
+    #             category_value = index+1,
+    #             date = full_date,
+    #             name = name,
+    #             prop = prop,
+    #             line = teaser
+    #         )
+    #         db.session.add(player)
+    #     db.session.commit()
 
-        player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="total_value",FinalBet.category_value==(index+1)).all()
-        if len(player_data_list) > 0:
-            player_data = player_data_list[0]
-            player_data.name = name
-            player_data.prop = prop
-            player_data.line = teaser
-        else:
-            player = FinalBet(
-                category = "total_value",
-                algorithm = "B",
-                category_value = index+1,
-                date = full_date,
-                name = name,
-                prop = prop,
-                line = teaser
-            )
-            db.session.add(player)
-        db.session.commit()
+    #     print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight})")
 
-        print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight}, Total Value:{total_value})")
+
+
+    # print("\nRanked by Total Value\n")
+
+    # for index, item in enumerate(sorted_by_total_value):
+    #     name=item["name"]
+    #     prop = item["prop"]
+    #     value = item["value"]
+    #     teaser = item["teaser"]
+    #     modifier = item["modifier"]
+    #     proj = item["proj"]
+    #     data_points = item["data_points"]
+    #     games_straight = item["games_straight"]
+    #     total_value = item["total_value"]
+
+    #     player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="total_value",FinalBet.category_value==(index+1)).all()
+    #     if len(player_data_list) > 0:
+    #         player_data = player_data_list[0]
+    #         player_data.name = name
+    #         player_data.prop = prop
+    #         player_data.line = teaser
+    #     else:
+    #         player = FinalBet(
+    #             category = "total_value",
+    #             algorithm = "B",
+    #             category_value = index+1,
+    #             date = full_date,
+    #             name = name,
+    #             prop = prop,
+    #             line = teaser
+    #         )
+    #         db.session.add(player)
+    #     db.session.commit()
+
+    #     print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight}, Total Value:{total_value})")
         
         
     # print("\nWeekday Comparisons\n")
@@ -1558,19 +1311,15 @@ with app.app_context():
     #     line = item["line"]
     #     print(f"{index+1}: {name} {line} {prop}: {value}")
 
+    # print("Injuries:")
 
-    print(f"\nDouble Doubles: {double_doubles}")
-    print(f"Triple Doubles: {triple_doubles}\n")
+    # for team,injuries in injured_list.items():
+    #     if team in list_of_teams:
+    #         print(f"{team}: {injuries}")
 
-    print("Injuries:")
-
-    for team,injuries in injured_list.items():
-        if team in list_of_teams:
-            print(f"{team}: {injuries}")
-
-    print("\nAlgo B")
-    print(time_string)
-    print('✅')
+    # print("\nAlgo B")
+    # print(time_string)
+    # print('✅')
 
             
 

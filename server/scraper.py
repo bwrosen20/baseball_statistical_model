@@ -18,7 +18,7 @@ import ipdb
 
 with app.app_context():
     
-    years = ["2021,2022,2023"]
+    years = ["2021","2022","2023"]
 
     for year in years:
 
@@ -31,7 +31,8 @@ with app.app_context():
         doc = BeautifulSoup(html.text, 'html.parser')
         rows = doc.select('p.game')
 
-        for game in rows:
+
+        for game in rows[383:]:
 
             home = game.select('a')[1].text
             away = game.select('a')[0].text
@@ -59,11 +60,10 @@ with app.app_context():
             total_date = date+" "+the_time_list[2]+" "+'PM' if the_time_list[3][0]=='p' else 'AM'
             the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
 
-            if the_time_string > datetime(2021,4,30,22,00):
+
+            if the_time_string > datetime(2021,5,31,22,00):
                 break
-
-            
-
+                
 
             location = (box_score_data.select('.scorebox_meta')[0].select('div')[3].text)[7:]
             try:
