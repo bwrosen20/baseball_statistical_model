@@ -18,12 +18,16 @@ with app.app_context():
 
     def random_number(salary):
         counter = 20
-        value = round(float(salary),2)
-        array = []
-        while counter > value:
-            final_value = round(counter/20,2)
-            array.append(round(float(final_value),2))
-            counter-=.5
+        try:
+            value = round(float(salary),2)
+            array = []
+            while counter > value:
+                final_value = round(counter/20,2)
+                array.append(round(float(final_value),2))
+                counter-=.5
+        except ValueError:
+            array = [0,0,0]
+        
 
         return sample(array,1)[0]
 
@@ -308,7 +312,7 @@ with app.app_context():
 
 
     #schedule_page_url = f"https://rotogrinders.com/lineups/mlb?date={year_string}-{month_string}-{day_string}&site=draftkings"
-    schedule_page_url = f"https://rotogrinders.com/lineups/mlb?date=2023-06-30&site=draftkings"
+    schedule_page_url = f"https://rotogrinders.com/lineups/mlb?date=2023-08-18&site=draftkings"
     schedule_page = requests.get(schedule_page_url, headers = {'User-Agent':"Mozilla/5.0"})
     schedule = BeautifulSoup(schedule_page.text, 'html.parser')
     
@@ -464,7 +468,7 @@ with app.app_context():
         player_dict = {"name":name,
                 "position":["SP"],
                 "salary":salary,
-                "team":away,
+                "team":home,
                 "side":arm,
                 "value":random_number(salary)}
         player_list.append(player_dict)
@@ -481,15 +485,18 @@ with app.app_context():
             player_dict = {"name":name,
                 "position":positions,
                 "salary":salary,
-                "team":away,
+                "team":home,
                 "side":bat,
                 "value":random_number(salary)}
             player_list.append(player_dict)
-    
 
+
+    #using value just to test DK algorithm
 
     sorted_players = sorted(player_list,key=itemgetter('value'))
     sorted_players.reverse()
+
+    #to make sure the totals of each position are there the right amount of times
 
     pitchers = 0
     catchers = 0
@@ -501,6 +508,8 @@ with app.app_context():
 
     dk_players = []
     dk_counter = 0
+
+    #build the original 10 player list
 
     for player in sorted_players:
         if "SP" in player["position"] and pitchers<2:
@@ -533,6 +542,9 @@ with app.app_context():
             outfielders+=1
         if len(dk_players)<=10:
             dk_counter+=1
+
+    #if the 10 players salary is acceptable then end the algo there
+    #if not, check the next few players
 
     total_salary = sum([float(player["salary"]) for player in dk_players])
     if total_salary > 50:
@@ -600,7 +612,7 @@ with app.app_context():
                     player["dk_position"]="SS"
                     dk_players.append(player)
 
-                elif [player for player in dk_players if "RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]]:
+                elif "RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]:
                     outfielder_array =  [player for player in dk_players if player["dk_position"]=="OF"]
                     last_loss = outfielder_array[-1]
                     dk_players.remove(last_loss)
@@ -609,90 +621,97 @@ with app.app_context():
                     dk_players.append(player)
                 if len(dk_players)<=10:
                     dk_counter+=1
-                total_salary = sum([float(player["salary"]) for player in dk_players])
+                try:
+                    total_salary = sum([float(player["salary"]) for player in dk_players])
+                except ValueError:
+                    ipdb.set_trace()
                 if total_salary < 50:
                     break   
+
+        #now that we replaced a few players until we got the salary below the max,
+        #we have a list of removed players who may be able to go back in
+
 
         
         removed_players = removed_players[0:len(removed_players)-1]
         if len(removed_players) > 0:
             for player in removed_players:
                 if "SP" in player["position"]:
-                    pitcher_array = [player for player in dk_players if "SP" in player["position"]]
+                    pitcher_array = [player for player in dk_players if player["dk_position"]=="SP"]
                     last_loss = pitcher_array[-1]
                     everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
                     salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
-                    new_total_salary = salary_with_nine + float(last_loss["salary"])
-                    if  total_salary < new_total_salary <=50:
+                    new_total_salary = salary_with_nine + float(player["salary"])
+                    if  new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
                         dk_players.append(player)
                 elif "C" in player["position"]:
-                    last_loss = [player for player in dk_players if "C" in player["position"]]
+                    last_loss = [player for player in dk_players if player["dk_position"]=="C"]
                     try:
                         last_loss = last_loss[0]
                     except IndexError:
                         ipdb.set_trace()
                     everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
                     salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
-                    new_total_salary = salary_with_nine + float(last_loss["salary"])
-                    if  total_salary < new_total_salary <=50:
+                    new_total_salary = salary_with_nine + float(player["salary"])
+                    if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
                         dk_players.append(player)
                 elif "1B" in player["position"]:
-                    last_loss = [player for player in dk_players if "1B" in player["position"]]
+                    last_loss = [player for player in dk_players if player["dk_position"]=="1B"]
                     try:
                         last_loss = last_loss[0]
                     except IndexError:
                         ipdb.set_trace()
                     everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
                     salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
-                    new_total_salary = salary_with_nine + float(last_loss["salary"])
-                    if  total_salary < new_total_salary <=50:
+                    new_total_salary = salary_with_nine + float(player["salary"])
+                    if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
                         dk_players.append(player)
                 elif "2B" in player["position"]:
-                    last_loss = [player for player in dk_players if "2B" in player["position"]]
+                    last_loss = [player for player in dk_players if player["dk_position"]=="2B"]
                     try:
                         last_loss = last_loss[0]
                     except IndexError:
                         ipdb.set_trace()
                     everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
                     salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
-                    new_total_salary = salary_with_nine + float(last_loss["salary"])
-                    if  total_salary < new_total_salary <=50:
+                    new_total_salary = salary_with_nine + float(player["salary"])
+                    if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
                         dk_players.append(player)
                 elif "3B" in player["position"]:
-                    last_loss = [player for player in dk_players if "3B" in player["position"]]
+                    last_loss = [player for player in dk_players if player["dk_position"]=="3B"]
                     try:
                         last_loss = last_loss[0]
                     except IndexError:
                         ipdb.set_trace()
                     everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
                     salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
-                    new_total_salary = salary_with_nine + float(last_loss["salary"])
-                    if  total_salary < new_total_salary <=50:
+                    new_total_salary = salary_with_nine + float(player["salary"])
+                    if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
                         dk_players.append(player)
                 elif "SS" in player["position"]:
-                    last_loss = [player for player in dk_players if "SS" in player["position"]]
+                    last_loss = [player for player in dk_players if player["dk_position"]=="SS"]
                     try:
                         last_loss = last_loss[0]
                     except IndexError:
                         ipdb.set_trace()
                     everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
                     salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
-                    new_total_salary = salary_with_nine + float(last_loss["salary"])
-                    if  total_salary < new_total_salary <=50:
+                    new_total_salary = salary_with_nine + float(player["salary"])
+                    if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
                         dk_players.append(player)
                 elif ("RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]) and outfielders<3:
-                    outfielder_array = [player for player in dk_players if "RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]]
+                    outfielder_array = [player for player in dk_players if player["dk_position"]=="OF"]
                     last_loss = outfielder_array[-1]
                     everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
                     salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
-                    new_total_salary = salary_with_nine + float(last_loss["salary"])
-                    if  total_salary < new_total_salary <=50:
+                    new_total_salary = salary_with_nine + float(player["salary"])
+                    if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
                         dk_players.append(player)
 
