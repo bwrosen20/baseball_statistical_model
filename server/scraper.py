@@ -32,7 +32,7 @@ with app.app_context():
         rows = doc.select('p.game')
 
 
-        for game in rows[383:]:
+        for game in rows:
 
             home = game.select('a')[1].text
             away = game.select('a')[0].text
@@ -205,11 +205,21 @@ with app.app_context():
 
                     score = 0
 
-                    if "Strikeout" in result:
+                    if "Line" in result  or "Lineout" in result or "Flyball" in result or "Fly Ball" in result:
+                        strength = "Strong"
+                    elif "Weak" in result or "Groundout" in result or "Ground" in result or "Popfly" in result:
+                        strength = "Weak"
+                    else:
+                        strength = "None"
+
+                    if "Sacrifice" in result:
+                        play = "Sacrifice"
+                    elif "Strikeout" in result:
                         play = result.replace(';','').split(' ')
                         play = play[0]+(' ')+play[1]
                     elif "Groundout" in result:
                         play = "Groundout"
+                        strength = "Weak"
                     elif "Reached on" in result:
                         if "Interference" in result:
                             play = "Catcher Interference"
@@ -219,25 +229,27 @@ with app.app_context():
                         play = "Home Run"
                         score = 1
                         rbi+=1
-                    elif "Double" in result:
-                        play = "Double"
+                        strength = "Strong"
                     elif "Popfly" in result:
                         play = "Popfly"
                     elif "Lineout" in result:
                         play = "Lineout"
+                        strength = "Strong"
                     elif "Choice" in result:
                         play = "Fielder Choice"
                     elif "Walk" in result:
                         play = "Walk"
+                    elif "Single" in result:
+                        play = "Single"
+                    elif "Triple" in result:
+                        play = "Triple"
+                        strength = "Strong"
+                    elif "Double" in result:
+                        play = "Double"
+                        strength = "Strong"
                     else:
                         play = seperated_results[0]
 
-                    if "Weak" in result:
-                        strength = "Weak"
-                    elif "Line" in result or "Deep" in result:
-                        strength = "Strong"
-                    else:
-                        strength = "None"
 
                     #check location of contact. Defaults to "None"
 

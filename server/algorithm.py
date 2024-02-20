@@ -312,7 +312,7 @@ with app.app_context():
 
 
     #schedule_page_url = f"https://rotogrinders.com/lineups/mlb?date={year_string}-{month_string}-{day_string}&site=draftkings"
-    schedule_page_url = f"https://rotogrinders.com/lineups/mlb?date=2023-08-18&site=draftkings"
+    schedule_page_url = f"https://rotogrinders.com/lineups/mlb?date=2021-05-24&site=draftkings"
     schedule_page = requests.get(schedule_page_url, headers = {'User-Agent':"Mozilla/5.0"})
     schedule = BeautifulSoup(schedule_page.text, 'html.parser')
     
@@ -389,9 +389,13 @@ with app.app_context():
                 wind_value = 337.5
 
 
-            final_wind_direction = wind_value - wind_factor
-            if final_wind_direction < 0:
-                final_wind_direction = 360 + final_wind_direction
+
+            if wind_factor=="Dome":
+                final_wind_direction = 400
+            else:
+                final_wind_direction = wind_value - wind_factor
+                if final_wind_direction < 0:
+                    final_wind_direction = 360 + final_wind_direction
 
             
 
@@ -516,32 +520,41 @@ with app.app_context():
             player["dk_position"]="SP"
             dk_players.append(player)
             pitchers+=1
-        elif "C" in player["position"] and catchers==0:
+            continue
+        if "C" in player["position"] and catchers==0:
             player["dk_position"]="C"
             dk_players.append(player)
             catchers+=1
-        elif "1B" in player["position"] and first==0:
+            continue
+        if "1B" in player["position"] and first==0:
             player["dk_position"]="1B"
             dk_players.append(player)
             first+=1
-        elif "2B" in player["position"] and second==0:
+            continue
+        if "2B" in player["position"] and second==0:
             player["dk_position"]="2B"
             dk_players.append(player)
             second+=1
-        elif "3B" in player["position"] and third==0:
+            continue
+        if "3B" in player["position"] and third==0:
             player["dk_position"]="3B"
             dk_players.append(player)
             third+=1
-        elif "SS" in player["position"] and short==0:
+            continue
+        if "SS" in player["position"] and short==0:
             player["dk_position"]="SS"
             dk_players.append(player)
             short+=1
-        elif ("RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]) and outfielders<3:
+            continue
+        if ("RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]) and outfielders<3:
             player["dk_position"]="OF"
             dk_players.append(player)
             outfielders+=1
-        if len(dk_players)<=10:
-            dk_counter+=1
+            continue
+        if len(dk_players)==10:
+            break
+
+    [print(player) for player in dk_players]
 
     #if the 10 players salary is acceptable then end the algo there
     #if not, check the next few players
@@ -556,96 +569,88 @@ with app.app_context():
             if player not in dk_players:
                 if "SP" in player["position"]:
                     pitcher_array = [player for player in dk_players if player["dk_position"]=="SP"]
-                    last_loss = pitcher_array[-1]
-                    dk_players.remove(last_loss)
-                    removed_players.append(last_loss)
-                    player["dk_position"]="SP"
-                    dk_players.append(player)
-                elif "C" in player["position"]:
+                    for last_loss in pitcher_array:
+                        if float(player["salary"]) < float(last_loss["salary"]):
+                            dk_players.remove(last_loss)
+                            removed_players.append(last_loss)
+                            player["dk_position"]="SP"
+                            dk_players.append(player)
+                            break
+                if "C" in player["position"]:
                     last_loss = [player for player in dk_players if player["dk_position"]=="C"]
-                    try:
-                        last_loss = last_loss[0]
-                    except IndexError:
-                        ipdb.set_trace()
-                    dk_players.remove(last_loss)
-                    removed_players.append(last_loss)
-                    player["dk_position"]="C"
-                    dk_players.append(player)
-                elif "1B" in player["position"]:
+                    last_loss = last_loss[0]
+                    if float(player["salary"]) < float(last_loss["salary"]):
+                        dk_players.remove(last_loss)
+                        removed_players.append(last_loss)
+                        player["dk_position"]="C"
+                        dk_players.append(player)
+                        continue
+                if "1B" in player["position"]:
                     last_loss = [player for player in dk_players if player["dk_position"]=="1B"]
-                    try:
-                        last_loss = last_loss[0]
-                    except IndexError:
-                        ipdb.set_trace()
-                    dk_players.remove(last_loss)
-                    removed_players.append(last_loss)
-                    player["dk_position"]="1B"
-                    dk_players.append(player)
-                elif "2B" in player["position"]:
+                    last_loss = last_loss[0]
+                    if float(player["salary"]) < float(last_loss["salary"]):
+                        dk_players.remove(last_loss)
+                        removed_players.append(last_loss)
+                        player["dk_position"]="1B"
+                        dk_players.append(player)
+                        continue
+                if "2B" in player["position"]:
                     last_loss = [player for player in dk_players if player["dk_position"]=="2B"]
-                    try:
-                        last_loss = last_loss[0]
-                    except IndexError:
-                        ipdb.set_trace()
-                    dk_players.remove(last_loss)
-                    removed_players.append(last_loss)
-                    player["dk_position"]="2B"
-                    dk_players.append(player)
-                elif "3B" in player["position"]:
+                    last_loss = last_loss[0]
+                    if float(player["salary"]) < float(last_loss["salary"]):
+                        dk_players.remove(last_loss)
+                        removed_players.append(last_loss)
+                        player["dk_position"]="2B"
+                        dk_players.append(player)
+                        continue
+                if "3B" in player["position"]:
                     last_loss = [player for player in dk_players if player["dk_position"]=="3B"]
-                    try:
-                        last_loss = last_loss[0]
-                    except IndexError:
-                        ipdb.set_trace()
-                    dk_players.remove(last_loss)
-                    removed_players.append(last_loss)
-                    player["dk_position"]="3B"
-                    dk_players.append(player)
-                elif "SS" in player["position"]:
+                    last_loss = last_loss[0]
+                    if float(player["salary"]) < float(last_loss["salary"]):
+                        dk_players.remove(last_loss)
+                        removed_players.append(last_loss)
+                        player["dk_position"]="3B"
+                        dk_players.append(player)
+                        continue
+                if "SS" in player["position"]:
                     last_loss = [player for player in dk_players if player["dk_position"]=="SS"]
-                    try:
-                        last_loss = last_loss[0]
-                    except IndexError:
-                        ipdb.set_trace()
-                    dk_players.remove(last_loss)
-                    removed_players.append(last_loss)
-                    player["dk_position"]="SS"
-                    dk_players.append(player)
-
-                elif "RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]:
+                    last_loss = last_loss[0]
+                    if float(player["salary"]) < float(last_loss["salary"]):
+                        dk_players.remove(last_loss)
+                        removed_players.append(last_loss)
+                        player["dk_position"]="SS"
+                        dk_players.append(player)
+                        continue
+                if "RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]:
                     outfielder_array =  [player for player in dk_players if player["dk_position"]=="OF"]
-                    last_loss = outfielder_array[-1]
-                    dk_players.remove(last_loss)
-                    removed_players.append(last_loss)
-                    player["dk_position"]="OF"
-                    dk_players.append(player)
-                if len(dk_players)<=10:
-                    dk_counter+=1
-                try:
-                    total_salary = sum([float(player["salary"]) for player in dk_players])
-                except ValueError:
-                    ipdb.set_trace()
+                    for last_loss in outfielder_array:
+                        if float(player["salary"]) < float(last_loss["salary"]):
+                            dk_players.remove(last_loss)
+                            removed_players.append(last_loss)
+                            player["dk_position"]="OF"
+                            dk_players.append(player)
+                            break
+                total_salary = sum([float(player["salary"]) for player in dk_players])
                 if total_salary < 50:
                     break   
 
         #now that we replaced a few players until we got the salary below the max,
         #we have a list of removed players who may be able to go back in
-
-
         
-        removed_players = removed_players[0:len(removed_players)-1]
         if len(removed_players) > 0:
             for player in removed_players:
                 if "SP" in player["position"]:
                     pitcher_array = [player for player in dk_players if player["dk_position"]=="SP"]
-                    last_loss = pitcher_array[-1]
-                    everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
-                    salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
-                    new_total_salary = salary_with_nine + float(player["salary"])
-                    if  new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
-                        dk_players.remove(last_loss)
-                        dk_players.append(player)
-                elif "C" in player["position"]:
+                    for last_loss in pitcher_array:
+                        everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
+                        salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
+                        new_total_salary = salary_with_nine + float(player["salary"])
+                        if  new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
+                            dk_players.remove(last_loss)
+                            player["dk_position"]="SP"
+                            dk_players.append(player)
+                            break
+                if "C" in player["position"]:
                     last_loss = [player for player in dk_players if player["dk_position"]=="C"]
                     try:
                         last_loss = last_loss[0]
@@ -656,8 +661,10 @@ with app.app_context():
                     new_total_salary = salary_with_nine + float(player["salary"])
                     if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
+                        player["dk_position"]="C"
                         dk_players.append(player)
-                elif "1B" in player["position"]:
+                        continue
+                if "1B" in player["position"]:
                     last_loss = [player for player in dk_players if player["dk_position"]=="1B"]
                     try:
                         last_loss = last_loss[0]
@@ -668,8 +675,10 @@ with app.app_context():
                     new_total_salary = salary_with_nine + float(player["salary"])
                     if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
+                        player["dk_position"]="1B"
                         dk_players.append(player)
-                elif "2B" in player["position"]:
+                        continue
+                if "2B" in player["position"]:
                     last_loss = [player for player in dk_players if player["dk_position"]=="2B"]
                     try:
                         last_loss = last_loss[0]
@@ -680,8 +689,10 @@ with app.app_context():
                     new_total_salary = salary_with_nine + float(player["salary"])
                     if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
+                        player["dk_position"]="2B"
                         dk_players.append(player)
-                elif "3B" in player["position"]:
+                        continue
+                if "3B" in player["position"]:
                     last_loss = [player for player in dk_players if player["dk_position"]=="3B"]
                     try:
                         last_loss = last_loss[0]
@@ -692,8 +703,10 @@ with app.app_context():
                     new_total_salary = salary_with_nine + float(player["salary"])
                     if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
+                        player["dk_position"]="3B"
                         dk_players.append(player)
-                elif "SS" in player["position"]:
+                        continue
+                if "SS" in player["position"]:
                     last_loss = [player for player in dk_players if player["dk_position"]=="SS"]
                     try:
                         last_loss = last_loss[0]
@@ -704,22 +717,22 @@ with app.app_context():
                     new_total_salary = salary_with_nine + float(player["salary"])
                     if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
                         dk_players.remove(last_loss)
+                        player["dk_position"]="SS"
                         dk_players.append(player)
-                elif ("RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]) and outfielders<3:
+                        continue
+                if "RF" in player["position"] or "LF" in player["position"] or "CF" in player["position"] or "OF" in player["position"]:
                     outfielder_array = [player for player in dk_players if player["dk_position"]=="OF"]
-                    last_loss = outfielder_array[-1]
-                    everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
-                    salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
-                    new_total_salary = salary_with_nine + float(player["salary"])
-                    if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
-                        dk_players.remove(last_loss)
-                        dk_players.append(player)
+                    for last_loss in outfielder_array:
+                        everyone_else = [player for player in dk_players if player["name"]!=last_loss["name"]]
+                        salary_with_nine = sum([float(player["salary"]) for player in everyone_else])
+                        new_total_salary = salary_with_nine + float(player["salary"])
+                        if new_total_salary <=50 and float(player["value"]) > float(last_loss["value"]):
+                            dk_players.remove(last_loss)
+                            player["dk_position"]="OF"
+                            dk_players.append(player)
+                            break
 
         
-
-
-
-    ipdb.set_trace()
 
     #parse espn injury page
     injury_url = "https://www.espn.com/mlb/injuries"
@@ -897,12 +910,24 @@ with app.app_context():
     #new_odds_dict is a dicitonary of all today's props
 
     bets = []
-    consistency = []
     high_value_teasers = []
     low_value_teasers = []
     games_in_a_row = []
     weekday_games = []
-    counter = 0
+    counter = 0 
+
+
+    #find league average babip over last 100k abs
+
+    league_abs = AtBat.query.all()[-100000:]
+
+    league_avg_babip_numerator = len([ab for ab in league_abs if ab.result=="Triple" or ab.result=="Double" or ab.result=="Single"])
+    league_avg_babip_denominator = len([ab for ab in league_abs if "Strikeout" not in ab.result and ab.result!="Home Run" and ab.result!="Sacrifice" and ab.result!="Walk" and ab.result!="Hit" and "Interference" not in ab.result])
+    league_babip = league_avg_babip_numerator/league_avg_babip_denominator
+
+
+    league_in_play_percentage = league_avg_babip_denominator/len(league_abs)
+   
 
     for player in player_list:
 
@@ -916,12 +941,12 @@ with app.app_context():
         
         #collect my own data about every game they've played in
 
-        if player["position"]=="SP":
+        if "SP" in player["position"]:
             current_player = Pitcher.query.filter(Pitcher.name==player_name).first()
             hitter = 0
         else:
             current_player = Hitter.query.filter(Hitter.name==player_name).first()
-            pitcher_name = [player["name"] for player in player_list if player["position"]=="SP" and player["team"]==other_team][0]
+            pitcher_name = [player["name"] for player in player_list if "SP" in player["position"] and player["team"]==other_team][0]
             pitcher_object = Pitcher.query.filter(Pitcher.name==pitcher_name).first()
             hitter = 1
 
@@ -942,7 +967,30 @@ with app.app_context():
                 if hitter:
 
                     abs = current_player.at_bats
-                
+
+                    #find info for babip modifier
+
+                    hitter_total_abs = [ab for ab in abs if ab.result!="Sacrifice" and ab.result!="Walk" and ab.result!="Hit" and "Interference" not in ab.result]
+                    hitter_balls_in_play = [ab for ab in hitter_total_abs if "Strikeout" not in ab.result and ab.result!="Home Run"]
+                    hitter_babip_numerator = len([ab for ab in hitter_balls_in_play if ab.result=="Triple" or ab.result=="Double" or ab.result=="Single"])
+
+
+                    hitter_in_play_percentage = len(hitter_balls_in_play)/len(hitter_total_abs)
+                    hitter_babip = hitter_babip_numerator/len(hitter_balls_in_play)
+
+                    #find percentage of balls in play by pitcher
+
+
+                    all_pitcher_abs = pitcher_object.at_bats
+                    pitcher_total_abs = [ab for ab in pitcher_object.at_bats if ab.result!="Sacrifice" and ab.result!="Walk" and ab.result!="Hit" and "Interference" not in ab.result]
+                    pitcher_balls_in_play = [ab for ab in pitcher_total_abs if "Strikeout" not in ab.result and ab.result!="Home Run"]
+                    pitcher_babip_numerator = len([ab for ab in pitcher_balls_in_play if ab.result=="Triple" or ab.result=="Double" or ab.result=="Single"])
+
+
+                    pitcher_in_play_percentage = len(pitcher_balls_in_play)/len(pitcher_total_abs)
+                    pitcher_babip = pitcher_babip_numerator/len(pitcher_balls_in_play)
+
+                    
                     
                     #latest 25 abs at time
                     upper_hour = game["time"].hour+1
@@ -967,7 +1015,7 @@ with app.app_context():
                     latest_games = [ab for ab in abs][-30:]
 
 
-                    #last 8 home/away games
+                    #home/away games
                     if game["home"]==player_team:
                         latest_home_or_away_abs = [ab for ab in abs if ab.game.home==player_team][-50:]
                     else:
@@ -975,25 +1023,67 @@ with app.app_context():
                     
 
                     
-                    #get latest matchups vs pitcher
-                    abs_vs_opponent = [ab for ab in abs if (ab.pitcher.name==pitcher_name)][-15:]
+                    # #get latest matchups vs pitcher
+                    # abs_vs_opponent = [ab for ab in abs if (ab.pitcher.name==pitcher_name)][-15:]
+
+                    # #other things I need
+
+                    # #abs vs lefty/righty 
+
+                    # abs_vs_left_right = [ab for ab in abs if ab.pitcher.arm==pitcher_object.arm][-50:]
+
+                    # #right-left modifier
+
+                    # #pitchers average when facing opposite side batter
+
+                    # total_abs_opp = [ab for ab in pitcher_object.at_bats if ab.hitter.bat!=pitcher_object.arm]
+                    # abs_with_hit_opp = len([ab for ab in total_abs_opp if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
+
+                    # pitcher_opposite_avg = abs_with_hit_opp/len(total_abs_opp)
 
 
+                    # #pitchers avg when facing same side batter
+
+                    # total_abs_same = [ab for ab in pitcher_object.at_bats if ab.hitter.bat==pitcher_object.arm]
+                    # abs_with_hit_same = len([ab for ab in total_abs_same if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
+
+                    # pitcher_same_avg = abs_with_hit_same/len(total_abs_same)
+
+
+                    # #modifier will likely be around 1
+                    # #above 1 if pitcher is better against opposite
+                    # #less than 1 if pitcher is worse against opposite
+
+                    # batter_side_modifier = pitcher_opposite_avg/pitcher_same_avg
+
+
+                    
+
+                    #babip modifier
+                    
+                    #find percentage of balls in play compared to pitchers at bats
+                    #find hitter babip in last 150 abs 
+
+                    #hitter_babip
+                    #pitcher_babip
+                    #league_babip
+                    #league_in_play_percentage
+                    #pitcher_in_play_percentage
+                    #hitter_in_play_percentage
+
+                    babip_modifier = (pitcher_babip + hitter_babip) / (2 * league_babip)
+                    in_play_modifier = (pitcher_in_play_percentage + hitter_in_play_percentage) / (2 * league_in_play_percentage)
+
+                    
                     ipdb.set_trace()
 
-                    #other things I need
-
-                    #abs vs lefty/righty 
 
 
-
-                    #babip and hard hit avg are modifiers
+                    #create new implied batting average by multipying hitter 
 
                     #babip
                         #compare pitchers allowed babip to hitter's babip
 
-                    #hard hit batting avg
-                        #same as babip
                     #at stadium
                     at_stadium = [ab for ab in abs if ab.game.location == game["stadium"]] 
 
@@ -1001,13 +1091,13 @@ with app.app_context():
                     wind_high = wind_direction + 22.5
                     wind_low = wind_direction - 22.5
 
-                    wind_direction_abs = [ab for ab in abs if wind_low < ab.game.wind_direction < wind_high]
+                    wind_direction_abs = [ab for ab in abs if wind_low <= ab.game.wind_direction <= wind_high]
 
                     #wind speed
-                    wind_speed_high = wind_speed + 3
-                    wind_speed_low = wind_speed - 3
+                    wind_speed_high = wind_speed + 2
+                    wind_speed_low = wind_speed - 2
 
-                    wind_speed_abs = [ab for ab in abs if wind_speed_low < ab.game.wind_speed < wind_speed_high]
+                    wind_speed_abs = [ab for ab in abs if wind_speed_low <= ab.game.wind_speed <= wind_speed_high]
 
 
 
