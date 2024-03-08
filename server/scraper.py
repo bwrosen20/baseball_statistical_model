@@ -18,7 +18,7 @@ import ipdb
 
 with app.app_context():
     
-    years = ["2021","2022","2023"]
+    years = ["2022"]
 
     for year in years:
 
@@ -31,8 +31,11 @@ with app.app_context():
         doc = BeautifulSoup(html.text, 'html.parser')
         rows = doc.select('p.game')
 
+        #games that year in database
+        games_that_year = len([game for game in Game.query.all() if game.date.year==int(year)])
 
-        for game in rows:
+
+        for game in rows[games_that_year:]:
 
             home = game.select('a')[1].text
             away = game.select('a')[0].text
@@ -56,12 +59,22 @@ with app.app_context():
             date = box_score_data.select('.scorebox_meta')[0].select('div')[0].text
             the_time = box_score_data.select('.scorebox_meta')[0].select('div')[1].text
 
+            # ipdb.set_trace()
+
             the_time_list = the_time.split(' ')
-            total_date = date+" "+the_time_list[2]+" "+'PM' if the_time_list[3][0]=='p' else 'AM'
+
+            
+            if the_time_list[3][0]=='p':
+                ending_of_date="PM"
+            else:
+                ending_of_date="AM"
+
+            total_date = date+" "+the_time_list[2]+" "+ending_of_date
+
+
             the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
 
-
-            if the_time_string > datetime(2021,5,31,22,00):
+            if the_time_string > datetime(2022,4,15,22,00):
                 break
                 
 
@@ -145,7 +158,7 @@ with app.app_context():
                 sb=0
                 sb_att = 0
                 rbi = 0
-                if "Wild Pitch" in result or "Steals" in result or "Caught" in result or "Passed" in result or "Picked" in result or "Defensive" in result:
+                if "Wild Pitch" in result or "Steals" in result or "Caught" in result or "Passed" in result or "Picked" in result or "Defensive" in result or "Advancing" in result:
                     #we're gonna find the person who stole or scored on a wp 
                     if "Steals" in result:
                         for index, word in enumerate(seperated_results):
@@ -168,7 +181,7 @@ with app.app_context():
                                     person_who_stole.sb_att = person_who_stole.sb_att+1
                                     db.session.commit()
                                     # break
-                    elif "Picked" in result or "Defensive" in result:
+                    elif "Picked" in result or "Defensive" in result or "Advancing" in result:
                         pass
                     else:
                         if "R" in player.select('td')[4].text:
@@ -216,7 +229,10 @@ with app.app_context():
                         play = "Sacrifice"
                     elif "Strikeout" in result:
                         play = result.replace(';','').split(' ')
-                        play = play[0]+(' ')+play[1]
+                        if len(play) > 1:
+                            play = play[0]+(' ')+play[1]
+                        else:
+                            play = play[0]
                     elif "Groundout" in result:
                         play = "Groundout"
                         strength = "Weak"

@@ -112,6 +112,7 @@ class AtBat(db.Model, SerializerMixin):
     sb = db.Column(db.Integer)
     sb_att = db.Column(db.Integer)
     team = db.Column(db.String)
+    result_stdev = db.Column(db.Integer)
 
     hitter_id = db.Column('hitter_id',db.Integer, db.ForeignKey('hitter.id'))
     pitcher_id = db.Column('pitcher_id',db.Integer, db.ForeignKey('pitcher.id'))

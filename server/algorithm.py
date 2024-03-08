@@ -338,7 +338,7 @@ with app.app_context():
             temperature = int(game.select('.wind-status')[0].select('span.humidity')[0].text.replace('°',''))
             wind = game.select('.wind-status')[0].select('li')[0].select('span')[0].text.split(' ')
             wind_direction = wind[0]
-            wind_speed = wind[2]
+            wind_speed = int(wind[2])
             wind_factor = wind_correction_factors[stadium]
             hours_list = game.select('.precip-status')[0].select('.precip')[0].select('li')
             sun = game.select('.icn-sunny')
@@ -437,12 +437,55 @@ with app.app_context():
         name = unidecode(away_pitcher.select('a')[0].text)
         salary = away_pitcher.select('span.salary')[0].text.replace(' ','').replace('\n','').replace('$','').replace('K','')
         arm = away_pitcher.select('.stats')[0].text.replace(' ','').replace('\n','')[0]
+
+        #pitcher sb modifier data
+        try:
+            pitcher_object = Pitcher.query.filter(Pitcher.name==name)[0]
+        except IndexError:
+            ipdb.set_trace()
+
+        
+        hitter_array = []
+        sb_modifier_array = []
+        for ab in pitcher_object.at_bats:
+            hitter = ab.hitter.name
+            try:
+                hitter_object = Hitter.query.filter(Hitter.name==hitter)[0]
+            except IndexError:
+                ipdb.set_trace()
+            if hitter not in hitter_array:
+                hitter_array.append(hitter)
+                sb_modifier_abs = [ab for ab in pitcher_object.at_bats if ab.hitter.name==hitter]
+                if len(sb_modifier_abs)>5:
+                    #sb percentage against this pitcher
+                    abs_on_first = [ab for ab in sb_modifier_abs if ab.result=="Single" or ab.result=="Walk" or "Reached" in ab.result or "Choice" in ab.result]
+                    abs_where_he_stole = [ab for ab in abs_on_first if ab.sb>=1]
+                    pitcher_sb_modifier = len(abs_where_he_stole)/len(abs_on_first)
+
+                    #times people who get on try to steal
+                    total_abs_on_first = [[ab for ab in hitter_object.at_bats if ab.result=="Single" or ab.result=="Walk" or "Reached" in ab.result or "Choice" in ab.result]]
+                    total_abs_where_he_stole = [ab for ab in total_abs_on_first if ab.sb_att>=1]
+                    sb_attempt_modifier = len(total_abs_where_he_stole)/len(total_abs_on_first)
+
+                    #how likely he is to let up sb attempts in the first place
+                    pitcher_sb_attempts = [ab for ab in pitcher_object.at_bats if ab.sb_att > 0]
+                    pitcher_sb_abs = len([ab for ab in pitcher_sb_attempts if ab.sb > 0])
+
+                    pitcher_sb_success = pitcher_sb_abs/len(pitcher_sb_attempts)
+
+                    #total modifier will be around 1, higher if pitcher allows more sb
+                    sb_modifier = pitcher_sb_modifier/total_sb_modifier
+                    sb_modifier_array.append(sb_modifier)
+        sb_modifier_final = mean(sb_modifier_array)
+
+
         player_dict = {"name":name,
                 "position":["SP"],
                 "salary":salary,
                 "team":away,
                 "side":arm,
-                "value":random_number(salary)}
+                "value":random_number(salary),
+                "sb_modifier":sb_modifier_final}
         player_list.append(player_dict)
 
         for hitter in away_hitters:
@@ -469,12 +512,41 @@ with app.app_context():
         name = unidecode(home_pitcher.select('a')[0].text)
         salary = home_pitcher.select('span.salary')[0].text.replace(' ','').replace('\n','').replace('$','').replace('K','')
         arm = home_pitcher.select('.stats')[0].text.replace(' ','').replace('\n','')[0]
+
+        hitter_array = []
+        sb_modifier_array = []
+        for ab in pitcher_object.at_bats:
+            hitter = ab.hitter.name
+            try:
+                hitter_object = Hitter.query.filter(Hitter.name==hitter)[0]
+            except IndexError:
+                ipdb.set_trace()
+            if hitter not in hitter_array:
+                hitter_array.append(hitter)
+                sb_modifier_abs = [ab for ab in pitcher_object.at_bats if ab.hitter.name==hitter]
+                if len(sb_modifier_abs)>5:
+                    #sb percentage against this pitcher
+                    abs_on_first = [ab for ab in sb_modifier_abs if ab.result=="Single" or ab.result=="Walk" or "Reached" in ab.result or "Choice" in ab.result]
+                    abs_where_he_stole = [ab for ab in abs_on_first if ab.sb>=1]
+                    pitcher_sb_modifier = abs_where_he_stole/abs_on_first
+                    #sb percentage total
+                    total_abs_on_first = [[ab for ab in hitter_object.at_bats if ab.result=="Single" or ab.result=="Walk" or "Reached" in ab.result or "Choice" in ab.result]]
+                    total_abs_where_he_stole = [ab for ab in total_abs_on_first if ab.sb>=1]
+                    total_sb_modifier = total_abs_where_he_stole/total_abs_on_first
+
+                    #total modifier will be around 1, higher if pitcher allows more sb
+                    sb_modifier = pitcher_sb_modifier/total_sb_modifier
+                    sb_modifier_array.append(sb_modifier)
+        sb_modifier_final = mean(sb_modifier_array)
+
+
         player_dict = {"name":name,
                 "position":["SP"],
                 "salary":salary,
                 "team":home,
                 "side":arm,
-                "value":random_number(salary)}
+                "value":random_number(salary),
+                "sb_modifier":sb_modifier_final}
         player_list.append(player_dict)
         
         
@@ -732,7 +804,7 @@ with app.app_context():
                             dk_players.append(player)
                             break
 
-        
+    ipdb.set_trace()
 
     #parse espn injury page
     injury_url = "https://www.espn.com/mlb/injuries"
@@ -925,8 +997,22 @@ with app.app_context():
     league_avg_babip_denominator = len([ab for ab in league_abs if "Strikeout" not in ab.result and ab.result!="Home Run" and ab.result!="Sacrifice" and ab.result!="Walk" and ab.result!="Hit" and "Interference" not in ab.result])
     league_babip = league_avg_babip_numerator/league_avg_babip_denominator
 
+    league_avg_abs = [ab for ab in league_abs if ab.result!="Sacrifice" and ab.result!="Walk" and ab.result!="Hit" and "Interference" not in ab.result]
+    league_avg_hits = len([ab for ab in league_avg_abs if ab.result=="Home Run" or ab.result=="Triple" or ab.result=="Double" or ab.result=="Single"])
+
+    league_avg = league_avg_hits/len(league_avg_abs)
+
+    league_ks = len([ab for ab in league_avg_abs if "Strikeout" in ab.result])
+    league_k_perc = league_ks/len(league_avg_abs)
 
     league_in_play_percentage = league_avg_babip_denominator/len(league_abs)
+
+
+    league_on_first_abs = [ab for ab in league_abs if ab.result=="Single" or ab.result=="Walk" or ab.result=="Hit" or "Reached" in ab.result or "Choice" in ab.result]
+
+    league_sb_abs = len([ab for ab in league_on_first_abs if ab.sb>=1])
+
+    league_sb_perc = league_sb_abs/len(league_on_first_abs)
    
 
     for player in player_list:
@@ -963,10 +1049,9 @@ with app.app_context():
 
                 print(f"{player_name} ({player_team})")
 
+                abs = current_player.at_bats
 
                 if hitter:
-
-                    abs = current_player.at_bats
 
                     #find info for babip modifier
 
@@ -982,10 +1067,12 @@ with app.app_context():
 
 
                     all_pitcher_abs = pitcher_object.at_bats
-                    pitcher_total_abs = [ab for ab in pitcher_object.at_bats if ab.result!="Sacrifice" and ab.result!="Walk" and ab.result!="Hit" and "Interference" not in ab.result]
+                    pitcher_total_abs = [ab for ab in all_pitcher_abs if ab.result!="Sacrifice" and ab.result!="Walk" and ab.result!="Hit" and "Interference" not in ab.result]
                     pitcher_balls_in_play = [ab for ab in pitcher_total_abs if "Strikeout" not in ab.result and ab.result!="Home Run"]
                     pitcher_babip_numerator = len([ab for ab in pitcher_balls_in_play if ab.result=="Triple" or ab.result=="Double" or ab.result=="Single"])
 
+
+                    #pitcher in play % and babip
 
                     pitcher_in_play_percentage = len(pitcher_balls_in_play)/len(pitcher_total_abs)
                     pitcher_babip = pitcher_babip_numerator/len(pitcher_balls_in_play)
@@ -1023,43 +1110,57 @@ with app.app_context():
                     
 
                     
-                    # #get latest matchups vs pitcher
-                    # abs_vs_opponent = [ab for ab in abs if (ab.pitcher.name==pitcher_name)][-15:]
+                    #get latest matchups vs pitcher
+                    abs_vs_opponent = [ab for ab in abs if (ab.pitcher.name==pitcher_name)][-15:]
 
-                    # #other things I need
+                    #other things I need
 
-                    # #abs vs lefty/righty 
+                    #abs vs lefty/righty 
 
-                    # abs_vs_left_right = [ab for ab in abs if ab.pitcher.arm==pitcher_object.arm][-50:]
+                    abs_vs_left_right = [ab for ab in abs if ab.pitcher.arm==pitcher_object.arm][-50:]
 
-                    # #right-left modifier
+                    #right-left modifier
 
-                    # #pitchers average when facing opposite side batter
+                    #pitchers average when facing opposite side batter
 
-                    # total_abs_opp = [ab for ab in pitcher_object.at_bats if ab.hitter.bat!=pitcher_object.arm]
-                    # abs_with_hit_opp = len([ab for ab in total_abs_opp if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
+                    total_abs_opp = [ab for ab in all_pitcher_abs if ab.hitter.bat!=pitcher_object.arm and "Walk" not in ab.result and "Sacrifice" not in ab.result and "Interference" not in ab.result and "Hit" not in ab.result]
+                    abs_with_hit_opp = len([ab for ab in total_abs_opp if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
 
-                    # pitcher_opposite_avg = abs_with_hit_opp/len(total_abs_opp)
-
-
-                    # #pitchers avg when facing same side batter
-
-                    # total_abs_same = [ab for ab in pitcher_object.at_bats if ab.hitter.bat==pitcher_object.arm]
-                    # abs_with_hit_same = len([ab for ab in total_abs_same if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
-
-                    # pitcher_same_avg = abs_with_hit_same/len(total_abs_same)
+                    pitcher_opposite_avg = abs_with_hit_opp/len(total_abs_opp)
 
 
-                    # #modifier will likely be around 1
-                    # #above 1 if pitcher is better against opposite
-                    # #less than 1 if pitcher is worse against opposite
+                    #pitchers avg when facing same side batter
 
-                    # batter_side_modifier = pitcher_opposite_avg/pitcher_same_avg
+                    total_abs_same = [ab for ab in all_pitcher_abs if ab.hitter.bat==pitcher_object.arm and "Walk" not in ab.result and "Sacrifice" not in ab.result and "Interference" not in ab.result and "Hit" not in ab.result]
+                    abs_with_hit_same = len([ab for ab in total_abs_same if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
+
+                    pitcher_same_avg = abs_with_hit_same/len(total_abs_same)
 
 
+
+                    #hitters average when facing opposite side pitcher
+
+                    oppo_taco_abs = [ab for ab in abs if ab.pitcher.arm!=current_player.bat and "Walk" not in ab.result and "Sacrifice" not in ab.result and "Interference" not in ab.result and "Hit" not in ab.result]
+                    oppo_taco_hits = len([ab for ab in oppo_taco_abs if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
+
+                    hitter_opposite_avg = oppo_taco_hits/len(oppo_taco_abs)
+
+
+                    #hitters avg when facing same side pitcher
+
+                    same_side_abs = [ab for ab in abs if ab.pitcher.arm==current_player.bat and "Walk" not in ab.result and "Sacrifice" not in ab.result and "Interference" not in ab.result and "Hit" not in ab.result]
+                    same_side_hits = len([ab for ab in same_side_abs if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
                     
 
-                    #babip modifier
+                    hitter_same_avg = same_side_hits/len(same_side_abs)
+
+                    if pitcher_object.arm==current_player.bat:
+                        batter_side_modifier = (0.35 * pitcher_same_avg/league_avg ) + (0.65 * hitter_same_avg/league_avg)
+
+                    else:
+                        batter_side_modifier = (0.35 * pitcher_opposite_avg/league_avg ) + (0.65 * hitter_opposite_avg/league_avg)
+
+                    #babip modifier)
                     
                     #find percentage of balls in play compared to pitchers at bats
                     #find hitter babip in last 150 abs 
@@ -1074,9 +1175,32 @@ with app.app_context():
                     babip_modifier = (pitcher_babip + hitter_babip) / (2 * league_babip)
                     in_play_modifier = (pitcher_in_play_percentage + hitter_in_play_percentage) / (2 * league_in_play_percentage)
 
-                    
-                    ipdb.set_trace()
 
+                    result_modifier = (0.275 * babip_modifier + 0.05 * in_play_modifier + 0.675 * batter_side_modifier)
+
+                    
+                    #need a sb modifier, maybe more. We'll see
+
+                    #sb modifier
+
+                    #pitchers abs where a player gets onto first
+
+                    on_first_abs = [ab for ab in all_pitcher_abs if ab.result=="Single" or ab.result=="Walk" or ab.result=="Hit" or "Reached" in ab.result or "Choice" in ab.result]
+
+                    sb_abs = len([ab for ab in on_first_abs if ab.sb>=1])
+
+                    sb_perc = league_sb_abs/len(league_on_first_abs)
+
+                    #how likely they are to steal compared to the rest of the league
+                    sb_modifier = sb_perc/league_sb_perc
+
+                    pitcher_list_object = [player for player in player_list if player["name"]==pitcher_name][0]
+
+
+                    #how bad the pitcher is against sb's (higher number means more steals)
+                    pitcher_sb_modifier = pitcher_list_object["sb_modifier"]
+
+                    #strikeout percentage (for pitchers)
 
 
                     #create new implied batting average by multipying hitter 
@@ -1084,12 +1208,26 @@ with app.app_context():
                     #babip
                         #compare pitchers allowed babip to hitter's babip
 
-                    #at stadium
-                    at_stadium = [ab for ab in abs if ab.game.location == game["stadium"]] 
 
-                    #with wind direction
-                    wind_high = wind_direction + 22.5
-                    wind_low = wind_direction - 22.5
+                else:
+
+                    #pitcher algorithm
+
+
+
+
+
+                #at stadium
+                at_stadium = [ab for ab in abs if ab.game.location == game["stadium"]] 
+
+                #with wind direction
+
+                if final_wind_direction == 400:
+                    wind_direction_abs = [ab for ab in abs if ab.game.precipitation=="In Dome"]
+
+                else:
+                    wind_high = final_wind_direction + 22.5
+                    wind_low = final_wind_direction - 22.5
 
                     wind_direction_abs = [ab for ab in abs if wind_low <= ab.game.wind_direction <= wind_high]
 
@@ -1099,56 +1237,53 @@ with app.app_context():
 
                     wind_speed_abs = [ab for ab in abs if wind_speed_low <= ab.game.wind_speed <= wind_speed_high]
 
+                #sunny/cloudy
+                #Overcast, Sunny, Cloudy, In Dome
+                if game["cloud_or_sun"]=="Cloudy":
+                    cloud_or_sun_abs = [ab for ab in abs if ab.game.cloud_or_sun=="Cloudy" or ab.game.cloud_or_sun=="Overcast"]
+                elif game["cloud_or_sun"]=="Sunny":
+                    cloud_or_sun_abs = [ab for ab in abs if ab.game.cloud_or_sun=="Sunny"]
+                else:
+                    cloud_or_sun_abs = []
 
 
-
-                    #sunny/cloudy
-                    #Overcast, Sunny, Cloudy, In Dome
-                    if game["cloud_or_sun"]=="Cloudy":
-                        cloud_or_sun_abs = [ab for ab in abs if ab.game.cloud_or_sun=="Cloudy" or ab.game.cloud_or_sun=="Overcast"]
-                    elif game["cloud_or_sun"]=="Sunny":
-                        cloud_or_sun_abs = [ab for ab in abs if ab.game.cloud_or_sun=="Sunny"]
-                    else:
-                        cloud_or_sun_abs = []
+                #precipitation
+                if game["precipitation"]=="Rain":
+                    precipitation_abs = [ab for ab in abs if ab.game.precipitation=="Rain" or ab.game.precipitation=="Drizzle"]
+                elif game["precipitation"]=="Snow":
+                    precipitation_abs = [ab for ab in abs if ab.game.precipitation=="Snow"]
+                else:
+                    precipitation_abs = []
 
 
-                    #precipitation
-                    if game["precipitation"]=="Rain":
-                        precipitation_abs = [ab for ab in abs if ab.game.precipitation=="Rain" or ab.game.precipitation=="Drizzle"]
-                    elif game["precipitation"]=="Snow":
-                        precipitation_abs = [ab for ab in abs if ab.game.precipitation=="Snow"]
-                    else:
-                        precipitation_abs = []
+                #temperature
+                freezing = 35
+                real_cold = 42
+                very_cold = 47
+                cold = 62
+                nice = 78
+                hot = 88
+                too_hot = 97
 
+                if game["temperature"] <= freezing:
+                    temperature_abs = [ab for ab in abs if ab.game.temperature <= freezing]
+                elif freezing < game["temperature"] <= real_cold:
+                    temperature_abs = [ab for ab in abs if freezing < ab.game.temperature <= real_cold]
+                elif real_cold < game["temperature"] <= very_cold:
+                    temperature_abs = [ab for ab in abs if real_cold < ab.game.temperature <= very_cold]
+                elif very_cold < game["temperature"] <= cold:
+                    temperature_abs = [ab for ab in abs if very_cold < ab.game.temperature <= cold]
+                elif cold < game["temperature"] <= nice:
+                    temperature_abs = [ab for ab in abs if cold < ab.game.temperature <= nice]
+                elif nice < game["temperature"] <= hot:
+                    temperature_abs = [ab for ab in abs if nice < ab.game.temperature <= hot]
+                elif hot < game["temperature"] <= too_hot:
+                    temperature_abs = [ab for ab in abs if hot < ab.game.temperature <= too_hot]
+                else:
+                    temperature_abs = [ab for ab in abs if ab.game.temperature > too_hot]
 
-                    #temperature
-                    freezing = 35
-                    real_cold = 42
-                    very_cold = 47
-                    cold = 62
-                    nice = 78
-                    hot = 88
-                    too_hot = 97
-
-                    if game["temperature"] <= freezing:
-                        temperature_abs = [ab for ab in abs if ab.game.temperature <= freezing]
-                    elif freezing < game["temperature"] <= real_cold:
-                        temperature_abs = [ab for ab in abs if freezing < ab.game.temperature <= real_cold]
-                    elif real_cold < game["temperature"] <= very_cold:
-                        temperature_abs = [ab for ab in abs if real_cold < ab.game.temperature <= very_cold]
-                    elif very_cold < game["temperature"] <= cold:
-                        temperature_abs = [ab for ab in abs if very_cold < ab.game.temperature <= cold]
-                    elif cold < game["temperature"] <= nice:
-                        temperature_abs = [ab for ab in abs if cold < ab.game.temperature <= nice]
-                    elif nice < game["temperature"] <= hot:
-                        temperature_abs = [ab for ab in abs if nice < ab.game.temperature <= hot]
-                    elif hot < game["temperature"] <= too_hot:
-                        temperature_abs = [ab for ab in abs if hot < ab.game.temperature <= too_hot]
-                    else:
-                        temperature_abs = [ab for ab in abs if ab.game.temperature > too_hot]
-
-                    #vs team
-                    abs_vs_team = [ab for ab in abs if ab.game.home==other_team or ab.game.visitor==other_team]
+                #vs team
+                abs_vs_team = [ab for ab in abs if ab.game.home==other_team or ab.game.visitor==other_team]
 
 
 
@@ -1177,30 +1312,28 @@ with app.app_context():
 
 
                     #make a big array of games
-                    latest_home_or_away_games.extend(games_at_time)
-                    latest_home_or_away_games.extend(games_vs_opponent)
-                    if injury:
-                        latest_home_or_away_games.extend(games_with_injury[-3:])
-                    if opponent_injury:
-                        latest_home_or_away_games.extend(games_with_opp_injury[-3:])
-                    latest_home_or_away_games.extend(games_on_day)
-                    latest_home_or_away_games.extend(rest_days)
+                    # latest_home_or_away_games.extend(games_at_time)
+                    # latest_home_or_away_games.extend(games_vs_opponent)
+                    # if injury:
+                    #     latest_home_or_away_games.extend(games_with_injury[-3:])
+                    # if opponent_injury:
+                    #     latest_home_or_away_games.extend(games_with_opp_injury[-3:])
+                    # latest_home_or_away_games.extend(games_on_day)
+                    # latest_home_or_away_games.extend(rest_days)
 
-                    latest_home_or_away_games.reverse()
+                    # latest_home_or_away_games.reverse()
 
                     #find most similar game
-                    most_similar = mode(latest_home_or_away_games)
-                    assists_similar = most_similar.assists
-                    points_similar = most_similar.points
-                    trb_similar = most_similar.trb
 
 
-                    new_game_list = set(latest_home_or_away_games)
+                    # new_game_list = set(latest_home_or_away_games)
 
-                    uniq_game_list = list(new_game_list)
+                    # uniq_game_list = list(new_game_list)
 
 
-                    uniq_game_list = [game for game in uniq_game_list]
+                    # uniq_game_list = [game for game in uniq_game_list]
+
+                    ipdb.set_trace()
 
 
 
