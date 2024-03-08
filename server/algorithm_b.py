@@ -32,6 +32,8 @@ with app.app_context():
     #     return sample(array,1)[0]
 
 
+    print("Start Time Fetch")
+
 
     time_url = "https://time.is/"
     time_page = requests.get(time_url, headers = {'User-Agent':"Mozilla/5.0"})
@@ -67,6 +69,8 @@ with app.app_context():
     month_of_yesterday = calendar.month_name[yesterday.month].lower()
     year_of_yesterday = yesterday.year
     year_of_yesterday_string = str(year_of_yesterday)
+
+    print("Time Fetch Done")
 
 
 
@@ -307,6 +311,7 @@ with app.app_context():
             
 
 
+    print("Start league wide stats")
 
     #find league average babip over last 100k abs
 
@@ -342,7 +347,10 @@ with app.app_context():
 
     #get game data
 
+    print("Finish League Wide Stats")
 
+
+    print("Start game data")
 
     year=2022
 
@@ -417,6 +425,8 @@ with app.app_context():
 
         home = game.select('a')[1].text
         away = game.select('a')[0].text
+
+        print(f"{away} at {home}")
 
         
         play_by_play = box_score_data.select('#all_play_by_play')[0]
@@ -676,7 +686,7 @@ with app.app_context():
     
     print("Made it to the loop")
 
-    for player in hitter_list:
+    for player in hitter_list[200:]:
 
         player_name = player.name
         player_team = player.team
@@ -688,8 +698,10 @@ with app.app_context():
         
         #collect my own data about every game they've played in
 
-        pitcher_object = [player for player in pitcher_list if player.team==other_team][0]
-        pitcher_name=pitcher_object.name
+        pitcher_object_list = [player for player in pitcher_list if player.team==other_team]
+        if len(pitcher_object_list) > 0:
+            pitcher_object = pitcher_object_list[0]
+            pitcher_name=pitcher_object.name
         # hitter = 1
     
 
@@ -697,12 +709,11 @@ with app.app_context():
         # specific_time = datetime(2024,1,21,16,30,00)
         #and specific_time.time() < [game["time"] for game in todays_games if game["home"]==player_team or game["away"]==player_team][0]
 
-        # if ([game.date.time() for game in game_list if game.home==player_team or game.visitor==player_team][0] > format_time):
-        if 1>0:
+        # if ([game.date.time() for game in game_list if game.home==player_team or game.visitor==player_team][0] > format_time)
 
             print(f"{player_name} ({player_team})")
 
-            abs = player.at_bats
+            abs = [ab for ab in player.at_bats if ab.game]
 
 
             #find info for babip modifier
@@ -713,7 +724,13 @@ with app.app_context():
 
 
             hitter_in_play_percentage = len(hitter_balls_in_play)/len(hitter_total_abs)
-            hitter_babip = hitter_babip_numerator/len(hitter_balls_in_play)
+            except ZeroDivisionError:
+                hitter_in_play_percentage = league_in_play_percentage
+
+            try:
+                hitter_babip = hitter_babip_numerator/len(hitter_balls_in_play)
+            except ZeroDivisionError:
+                hitter_babip = league_babip
 
             #find percentage of balls in play by pitcher
 
@@ -727,7 +744,11 @@ with app.app_context():
             #pitcher in play % and babip
 
             pitcher_in_play_percentage = len(pitcher_balls_in_play)/len(pitcher_total_abs)
-            pitcher_babip = pitcher_babip_numerator/len(pitcher_balls_in_play)
+
+            try:
+                pitcher_babip = pitcher_babip_numerator/len(pitcher_balls_in_play)
+            except ZeroDivisionError:
+                pitcher_babip = league_babip
 
             
             
@@ -789,27 +810,22 @@ with app.app_context():
             pitcher_same_avg = abs_with_hit_same/len(total_abs_same)
 
 
-
-            #hitters average when facing opposite side pitcher
-
-            oppo_taco_abs = [ab for ab in abs if ab.pitcher.arm!=player.bat and "Walk" not in ab.result and "Sacrifice" not in ab.result and "Interference" not in ab.result and "Hit" not in ab.result]
-            oppo_taco_hits = len([ab for ab in oppo_taco_abs if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
-
-            hitter_opposite_avg = oppo_taco_hits/len(oppo_taco_abs)
-
-
-            #hitters avg when facing same side pitcher
-
-            same_side_abs = [ab for ab in abs if ab.pitcher.arm==player.bat and "Walk" not in ab.result and "Sacrifice" not in ab.result and "Interference" not in ab.result and "Hit" not in ab.result]
-            same_side_hits = len([ab for ab in same_side_abs if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
-            
-
-            hitter_same_avg = same_side_hits/len(same_side_abs)
-
             if pitcher_object.arm==player.bat:
+                #hitters avg when facing same side pitcher
+
+                same_side_abs = [ab for ab in abs if ab.pitcher.arm==player.bat and "Walk" not in ab.result and "Sacrifice" not in ab.result and "Interference" not in ab.result and "Hit" not in ab.result]
+                same_side_hits = len([ab for ab in same_side_abs if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
+                
+                hitter_same_avg = same_side_hits/len(same_side_abs)
                 batter_side_modifier = (0.35 * pitcher_same_avg/league_avg ) + (0.65 * hitter_same_avg/league_avg)
 
             else:
+                #hitters average when facing opposite side pitcher
+
+                oppo_taco_abs = [ab for ab in abs if ab.pitcher.arm!=player.bat and "Walk" not in ab.result and "Sacrifice" not in ab.result and "Interference" not in ab.result and "Hit" not in ab.result]
+                oppo_taco_hits = len([ab for ab in oppo_taco_abs if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run"])
+
+                hitter_opposite_avg = oppo_taco_hits/len(oppo_taco_abs)
                 batter_side_modifier = (0.35 * pitcher_opposite_avg/league_avg ) + (0.65 * hitter_opposite_avg/league_avg)
 
             #babip modifier)
@@ -869,18 +885,20 @@ with app.app_context():
 
             #last 50 with wind direction
 
-            if final_wind_direction == 400:
+            if game.wind_direction == 400:
                 wind_direction_abs = [ab for ab in abs if ab.game.precipitation=="In Dome"][-50:]
 
             else:
-                wind_high = final_wind_direction + 22.5
-                wind_low = final_wind_direction - 22.5
+                wind_high = game.wind_direction + 22.5
+                wind_low = game.wind_direction - 22.5
 
                 wind_direction_abs = [ab for ab in abs if wind_low <= ab.game.wind_direction <= wind_high][-50:]
 
+                # ipdb.set_trace()
+
                 #wind speed
-                wind_speed_high = wind_speed + 2
-                wind_speed_low = wind_speed - 2
+                wind_speed_high = int(game.wind_speed) + 2
+                wind_speed_low = int(game.wind_speed) - 2
 
                 wind_speed_abs = [ab for ab in abs if wind_speed_low <= ab.game.wind_speed <= wind_speed_high][-50:]
 
@@ -912,22 +930,24 @@ with app.app_context():
             hot = 88
             too_hot = 97
 
-            if game.temperature <= freezing:
-                temperature_abs = [ab for ab in abs if ab.game.temperature <= freezing][50:]
-            elif freezing < game.temperature <= real_cold:
-                temperature_abs = [ab for ab in abs if freezing < ab.game.temperature <= real_cold][-50:]
-            elif real_cold < game.temperature <= very_cold:
-                temperature_abs = [ab for ab in abs if real_cold < ab.game.temperature <= very_cold][-50:]
-            elif very_cold < game.temperature <= cold:
-                temperature_abs = [ab for ab in abs if very_cold < ab.game.temperature <= cold][-50:]
-            elif cold < game.temperature <= nice:
-                temperature_abs = [ab for ab in abs if cold < ab.game.temperature <= nice][-50:]
-            elif nice < game.temperature <= hot:
-                temperature_abs = [ab for ab in abs if nice < ab.game.temperature <= hot][-50:]
-            elif hot < game.temperature <= too_hot:
-                temperature_abs = [ab for ab in abs if hot < ab.game.temperature <= too_hot][-50:]
+            the_temperature = int(game.temperature)
+
+            if the_temperature <= freezing:
+                temperature_abs = [ab for ab in abs if the_temperature <= freezing][50:]
+            elif freezing < the_temperature <= real_cold:
+                temperature_abs = [ab for ab in abs if freezing < the_temperature <= real_cold][-50:]
+            elif real_cold < the_temperature <= very_cold:
+                temperature_abs = [ab for ab in abs if real_cold < the_temperature <= very_cold][-50:]
+            elif very_cold < the_temperature <= cold:
+                temperature_abs = [ab for ab in abs if very_cold < the_temperature <= cold][-50:]
+            elif cold < the_temperature <= nice:
+                temperature_abs = [ab for ab in abs if cold < the_temperature <= nice][-50:]
+            elif nice < the_temperature <= hot:
+                temperature_abs = [ab for ab in abs if nice < the_temperature <= hot][-50:]
+            elif hot < the_temperature <= too_hot:
+                temperature_abs = [ab for ab in abs if hot < the_temperature <= too_hot][-50:]
             else:
-                temperature_abs = [ab for ab in abs if ab.game.temperature > too_hot][-50:]
+                temperature_abs = [ab for ab in abs if the_temperature > too_hot][-50:]
 
             #vs team
             abs_vs_team = [ab for ab in abs if ab.game.home==other_team or ab.game.visitor==other_team][-50:]
@@ -959,21 +979,21 @@ with app.app_context():
 
 
                 #make a big array of games
-                # latest_home_or_away_games.extend(games_at_time)
-                # latest_home_or_away_games.extend(games_vs_opponent)
+                # latest_home_or_away_abs.extend(games_at_time)
+                # latest_home_or_away_abs.extend(games_vs_opponent)
                 # if injury:
-                #     latest_home_or_away_games.extend(games_with_injury[-3:])
+                #     latest_home_or_away_abs.extend(games_with_injury[-3:])
                 # if opponent_injury:
-                #     latest_home_or_away_games.extend(games_with_opp_injury[-3:])
-                # latest_home_or_away_games.extend(games_on_day)
-                # latest_home_or_away_games.extend(rest_days)
+                #     latest_home_or_away_abs.extend(games_with_opp_injury[-3:])
+                # latest_home_or_away_abs.extend(games_on_day)
+                # latest_home_or_away_abs.extend(rest_days)
 
-                # latest_home_or_away_games.reverse()
+                # latest_home_or_away_abs.reverse()
 
                 #find most similar game
 
 
-                # new_game_list = set(latest_home_or_away_games)
+                # new_game_list = set(latest_home_or_away_abs)
 
                 # uniq_game_list = list(new_game_list)
 
@@ -984,62 +1004,111 @@ with app.app_context():
             #values to put into stdev formula
 
             #temperature_abs
-            if len(temperature_abs)<5:
+            if len(temperature_abs)<4:
                 temperature_abs = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
             #abs_vs_team
-            if len(abs_vs_team)<5:
+            if len(abs_vs_team)<4:
                 abs_vs_team = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
             #precipitation_abs (if greater than 0)
-            if len(precipitation_abs)<5:
+            if len(precipitation_abs)<4:
                 precipitation_abs = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
             #cloud_or_sun_abs
-            if len(cloud_or_sun_abs)<5:
+            if len(cloud_or_sun_abs)<4:
                 cloud_or_sun_abs = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
             #wind_speed_abs
-            if len(wind_speed_abs)<5:
+            if len(wind_speed_abs)<4:
                 wind_speed_abs = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
             #wind_direction_abs
-            if len(wind_direction_abs)<5:
+            if len(wind_direction_abs)<4:
                 wind_direction_abs = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
             #at_stadium
-            if len(at_stadium)<5:
+            if len(at_stadium)<4:
                 at_stadium = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
             #abs_at_time
-            if len(abs_at_time)<5:
+            if len(abs_at_time)<4:
                 abs_at_time = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
             #abs_on_day
-            if len(abs_on_day)<5:
+            if len(abs_on_day)<4:
                 abs_on_day = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
             #latest_games
-            if len(latest_games)<5:
+            if len(latest_games)<4:
                 latest_games = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
-            #latest_home_or_away_games
-            if len(latest_home_or_away_games)<5:
-                latest_home_or_away_games = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
+            #latest_home_or_away_abs
+            if len(latest_home_or_away_abs)<4:
+                latest_home_or_away_abs = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
             #abs_vs_opponent
-            if len(abs_vs_opponent)<5:
+            if len(abs_vs_opponent)<4:
                 abs_vs_opponent = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
-            #abs_vs_left_or_right
-            if len(abs_vs_left_or_right)<5:
-                abs_vs_left_or_right = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
+            #abs_vs_left_right
+            if len(abs_vs_left_right)<4:
+                abs_vs_left_right = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
             
 
-            hit_stdev_array = [{"temperature_abs":{"array":temperature_abs,"stdev":stdev([ab.result_stdev for ab in temperature_abs])}},
-                {"abs_vs_team":{"array":abs_vs_team,"stdev":stdev([ab.result_stdev for ab in abs_vs_team])}},
-                {"precipitation_abs":{"array":precipitation_abs,"stdev":stdev([ab.result_stdev for ab in precipitation_abs])}},
-                {"cloud_or_sun_abs":{"array":cloud_or_sun_abs,"stdev":stdev([ab.result_stdev for ab in cloud_or_sun_abs])}},
-                {"wind_speed_abs":{"array":wind_speed_abs,"stdev":stdev([ab.result_stdev for ab in wind_speed_abs])}},
-                {"wind_direction_abs":{"array":wind_direction_abs,"stdev":stdev([ab.result_stdev for ab in wind_direction_abs])}},
-                {"at_stadium":{"array":at_stadium,"stdev":stdev([ab.result_stdev for ab in at_stadium])}},
-                {"abs_at_time":{"array":abs_at_time,"stdev":stdev([ab.result_stdev for ab in abs_at_time])}},
-                {"abs_on_day":{"array":abs_on_day,"stdev":stdev([ab.result_stdev for ab in abs_on_day])}},
-                {"latest_games":{"array":latest_games,"stdev":stdev([ab.result_stdev for ab in latest_games])}},
-                {"latest_home_or_away_games":{"array":latest_home_or_away_games,"stdev":stdev([ab.result_stdev for ab in latest_home_or_away_games])}},
-                {"abs_vs_opponent":{"array":abs_vs_opponent,"stdev":stdev([ab.result_stdev for ab in abs_vs_opponent])}},
-                {"abs_vs_left_or_right":{"array":abs_vs_left_or_right,"stdev":stdev([ab.result_stdev for ab in abs_vs_left_or_right])}}
+            # hit_stdev_array = [{"temperature_abs":{"array":temperature_abs,"stdev":stdev([ab.result_stdev for ab in temperature_abs])}},
+            #     {"abs_vs_team":{"array":abs_vs_team,"stdev":stdev([ab.result_stdev for ab in abs_vs_team])}},
+            #     {"precipitation_abs":{"array":precipitation_abs,"stdev":stdev([ab.result_stdev for ab in precipitation_abs])}},
+            #     {"cloud_or_sun_abs":{"array":cloud_or_sun_abs,"stdev":stdev([ab.result_stdev for ab in cloud_or_sun_abs])}},
+            #     {"wind_speed_abs":{"array":wind_speed_abs,"stdev":stdev([ab.result_stdev for ab in wind_speed_abs])}},
+            #     {"wind_direction_abs":{"array":wind_direction_abs,"stdev":stdev([ab.result_stdev for ab in wind_direction_abs])}},
+            #     {"at_stadium":{"array":at_stadium,"stdev":stdev([ab.result_stdev for ab in at_stadium])}},
+            #     {"abs_at_time":{"array":abs_at_time,"stdev":stdev([ab.result_stdev for ab in abs_at_time])}},
+            #     {"abs_on_day":{"array":abs_on_day,"stdev":stdev([ab.result_stdev for ab in abs_on_day])}},
+            #     {"latest_games":{"array":latest_games,"stdev":stdev([ab.result_stdev for ab in latest_games])}},
+            #     {"latest_home_or_away_abs":{"array":latest_home_or_away_abs,"stdev":stdev([ab.result_stdev for ab in latest_home_or_away_abs])}},
+            #     {"abs_vs_opponent":{"array":abs_vs_opponent,"stdev":stdev([ab.result_stdev for ab in abs_vs_opponent])}},
+            #     {"abs_vs_left_right":{"array":abs_vs_left_right,"stdev":stdev([ab.result_stdev for ab in abs_vs_left_right])}}
+            #     ]
+
+            hit_stdev_array = [{"name":"temperature_abs","array":temperature_abs,"stdev":stdev([ab.result_stdev for ab in temperature_abs])},
+                {"name":"abs_vs_team","array":abs_vs_team,"stdev":stdev([ab.result_stdev for ab in abs_vs_team])},
+                {"name":"precipitation_abs","array":precipitation_abs,"stdev":stdev([ab.result_stdev for ab in precipitation_abs])},
+                {"name":"cloud_or_sun_abs","array":cloud_or_sun_abs,"stdev":stdev([ab.result_stdev for ab in cloud_or_sun_abs])},
+                {"name":"wind_speed_abs","array":wind_speed_abs,"stdev":stdev([ab.result_stdev for ab in wind_speed_abs])},
+                {"name":"wind_direction_abs","array":wind_direction_abs,"stdev":stdev([ab.result_stdev for ab in wind_direction_abs])},
+                {"name":"at_stadium","array":at_stadium,"stdev":stdev([ab.result_stdev for ab in at_stadium])},
+                {"name":"abs_at_time","array":abs_at_time,"stdev":stdev([ab.result_stdev for ab in abs_at_time])},
+                {"name":"abs_on_day","array":abs_on_day,"stdev":stdev([ab.result_stdev for ab in abs_on_day])},
+                {"name":"latest_games","array":latest_games,"stdev":stdev([ab.result_stdev for ab in latest_games])},
+                {"name":"latest_home_or_away_abs","array":latest_home_or_away_abs,"stdev":stdev([ab.result_stdev for ab in latest_home_or_away_abs])},
+                {"name":"abs_vs_opponent","array":abs_vs_opponent,"stdev":stdev([ab.result_stdev for ab in abs_vs_opponent])},
+                {"name":"abs_vs_left_right","array":abs_vs_left_right,"stdev":stdev([ab.result_stdev for ab in abs_vs_left_right])}
                 ]
 
-            ipdb.set_trace()
+            sorted_hit_stdev = sorted(hit_stdev_array,key=itemgetter('stdev'))
+
+            if sorted_hit_stdev[1]["stdev"]-sorted_hit_stdev[0]["stdev"] > 0.4:
+                first_value = .60
+                second_value = .25
+            else:
+                first_value = .50
+                second_value = .35
+
+
+            new_stdev_list = []
+            for value in sorted_hit_stdev:
+                if value["stdev"] < .48:
+                    new_stdev_list.append(value)
+
+            if len(new_stdev_list) < 10:
+                new_number = 10 - len(new_stdev_list)
+                last_value = new_stdev_list[-1]
+                i=0
+                while i < new_number:
+                    new_stdev_list.append(last_value)
+                    i+=1
+
+            hit_formula = first_value * mean(ab.result_stdev for ab in sorted_hit_stdev[0]["array"]) + second_value * mean(ab.result_stdev for ab in sorted_hit_stdev[1]["array"]) + .1 * mean(ab.result_stdev for ab in sorted_hit_stdev[2]["array"]) + .05 * mean(ab.result_stdev for ab in sorted_hit_stdev[3]["array"]) + .025 * mean(ab.result_stdev for ab in sorted_hit_stdev[4]["array"]) + .0125 * mean(ab.result_stdev for ab in sorted_hit_stdev[5]["array"]) + .00625 * mean(ab.result_stdev for ab in sorted_hit_stdev[6]["array"]) + .003125 * mean(ab.result_stdev for ab in sorted_hit_stdev[7]["array"]) + .0015625 * mean(ab.result_stdev for ab in sorted_hit_stdev[8]["array"]) + .00078125 * mean(ab.result_stdev for ab in sorted_hit_stdev[9]["array"])
+            player_value = hit_formula * result_modifier
+
+            
+
+            bets.append({"name":player_name,"value":round(player_value,4)})
+
+    sorted_bets = sorted(bets,key=itemgetter('value'))
+    sorted_bets.reverse()
+    print(sorted_bets)
+
+    ipdb.set_trace()
 
 
 

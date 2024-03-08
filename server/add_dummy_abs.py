@@ -10,41 +10,41 @@ import ipdb
 
 with app.app_context():
 
-    at_bat_one = AtBat(
-                    inning= 1,
-                    pitches = 5,
-                    balls = 2,
-                    strikes = 2,
-                    result = "nothing",
-                    strength = "soft",
-                    location = "right field",
-                    rbi = 1,
-                    score = 1,
-                    sb = 1,
-                    sb_att = 1,
-                    team = "Dummy",
-                    result_stdev = 1
-                    )
+    # at_bat_one = AtBat(
+    #                 inning= 1,
+    #                 pitches = 5,
+    #                 balls = 2,
+    #                 strikes = 2,
+    #                 result = "nothing",
+    #                 strength = "soft",
+    #                 location = "right field",
+    #                 rbi = 1,
+    #                 score = 1,
+    #                 sb = 1,
+    #                 sb_att = 1,
+    #                 team = "Dummy",
+    #                 result_stdev = 1
+    #                 )
 
-    db.session.add(at_bat_one)
+    # db.session.add(at_bat_one)
 
-    at_bat_two = AtBat(
-                    inning= 1,
-                    pitches = 5,
-                    balls = 2,
-                    strikes = 2,
-                    result = "nothing",
-                    strength = "soft",
-                    location = "right field",
-                    rbi = 100,
-                    score = 100,
-                    sb = 100,
-                    sb_att = 100,
-                    team = "Dummy",
-                    result_stdev = 100
-                    )
+    # at_bat_two = AtBat(
+    #                 inning= 1,
+    #                 pitches = 5,
+    #                 balls = 2,
+    #                 strikes = 2,
+    #                 result = "nothing",
+    #                 strength = "soft",
+    #                 location = "right field",
+    #                 rbi = 100,
+    #                 score = 100,
+    #                 sb = 100,
+    #                 sb_att = 100,
+    #                 team = "Dummy",
+    #                 result_stdev = 100
+    #                 )
 
-    db.session.add(at_bat_two)
+    # db.session.add(at_bat_two)
 
     # at_bat_three = AtBat(
     #                 inning= 1,
@@ -64,6 +64,17 @@ with app.app_context():
 
     # db.session.add(at_bat_three)
 
+
+    game = Game.query.first()
+    hitter = Hitter.query.first()
+    pitcher = Pitcher.query.first()
+
+    dummies = [ab for ab in AtBat.query.all() if ab.team=="Dummy"]
+
+    for dummy in dummies:
+        dummy.game = game
+        dummy.hitter = hitter
+        dummy.pitcher = pitcher
 
 
 
