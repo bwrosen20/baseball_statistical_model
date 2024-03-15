@@ -74,7 +74,7 @@ with app.app_context():
 
             the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
 
-            if the_time_string > datetime(2022,4,15,22,00):
+            if the_time_string > datetime(2022,4,18,22,00):
                 break
                 
 
@@ -292,6 +292,18 @@ with app.app_context():
                                 rbi+=1
                                
 
+                    if "Strikeout" in play:
+                        result_stdev=0
+                    elif "Popfly" in play or "Groundout" in play or "Choice" in play or "Error" in play:
+                        result_stdev=.15
+                    elif "Flyout" in play:
+                        result_stdev=.35
+                    elif "Walk" in play or "Sacrifice" in play or "Interference" in play or "Hit" in play:
+                        result_stdev=.5
+                    elif "Lineout" in play:
+                        result_stdev=.75
+                    else:
+                        result_stdev=1
 
                 
                     inning = player.select('th')[0].text[1:]
@@ -316,7 +328,8 @@ with app.app_context():
                         score = score,
                         sb = sb,
                         sb_att = sb_att,
-                        team = team
+                        team = team,
+                        result_stdev = result_stdev
                     )
 
                     at_bat.pitcher = assoc_pitcher
