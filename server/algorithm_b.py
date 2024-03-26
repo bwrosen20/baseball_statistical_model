@@ -6,6 +6,7 @@ from operator import itemgetter
 from sqlalchemy import or_
 from unidecode import unidecode
 from random import sample
+from scrape_a_day import scrape_a_day
 import calendar
 import itertools
 import time
@@ -311,6 +312,7 @@ with app.app_context():
     #find league average babip over last 100k abs
 
     league_abs = AtBat.query.all()[-100000:]
+    thousand_games = Game.query.all()[-100:]
 
     league_avg_babip_numerator = len([ab for ab in league_abs if ab.result=="Triple" or ab.result=="Double" or ab.result=="Single"])
     league_avg_babip_denominator = len([ab for ab in league_abs if "Strikeout" not in ab.result and ab.result!="Home Run" and ab.result!="Sacrifice" and ab.result!="Walk" and ab.result!="Hit" and "Interference" not in ab.result])
@@ -321,8 +323,35 @@ with app.app_context():
 
     league_avg = league_avg_hits/len(league_avg_abs)
 
-    league_ks = len([ab for ab in league_avg_abs if "Strikeout" in ab.result])
-    league_k_perc = league_ks/len(league_avg_abs)
+    # league_avg_ks
+    list_of_ks = []
+    for a_game in thousand_games:
+        home = a_game.home
+        away = a_game.visitor
+        ab1_home = [ab for ab in a_game.at_bats if away==ab.team][0]
+        ab1_away = [ab for ab in a_game.at_bats if home==ab.team][0]
+        abs_to_count = [ab for ab in a_game.at_bats if ab.result!="Sacrifice" and ab.result!="Walk" and ab.result!="Hit" and "Interference" not in ab.result]
+        ks = [ab for ab in a_game.at_bats if "Strikeout" in ab.result]
+        pitcher_1_ks = len([ab for ab in ks if ab.pitcher==ab1_home.pitcher])
+        pitcher_2_ks = len([ab for ab in ks if ab.pitcher==ab1_away.pitcher])
+        list_of_ks.append(pitcher_1_ks)
+        list_of_ks.append(pitcher_2_ks)
+    league_avg_ks = mean(list_of_ks)
+
+    # league_avg_innings_pitched
+    list_of_outs = []
+    for a_game in thousand_games:
+        home = a_game.home
+        away = a_game.visitor
+        ab1_home = [ab for ab in a_game.at_bats if away==ab.team][0]
+        ab1_away = [ab for ab in a_game.at_bats if home==ab.team][0]
+        outs = [ab for ab in a_game.at_bats if "Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result]
+        pitcher_1_outs = len([ab for ab in outs if ab.pitcher==ab1_home.pitcher])
+        pitcher_2_outs = len([ab for ab in outs if ab.pitcher==ab1_away.pitcher])
+        list_of_outs.append(pitcher_1_outs)
+        list_of_outs.append(pitcher_2_outs)
+    league_avg_outs = mean(list_of_outs)
+
 
     league_in_play_percentage = league_avg_babip_denominator/len(league_abs)
 
@@ -384,7 +413,16 @@ with app.app_context():
 
     todays_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
 
+    last_game = Game.query.all()[-1]
+    tomorrows_time_string = todays_time_string + timedelta(1)
 
+    # print("Still in algo b")
+
+    # scrape_a_day(todays_time_string)
+
+
+
+    games_that_year = [game for game in Game.query.all() if game.date.year==int(year)]
 
     teams = []
     todays_games = []
@@ -412,11 +450,22 @@ with app.app_context():
         total_date = date+" "+the_time_list[2]+" "+ending_of_date
 
 
-        the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
+        try:
+            the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
+        except ValueError:
+            the_time = box_score_data.select('.scorebox_meta')[0].select('div')[2].text
+            the_time_list = the_time.split(' ')
+            if the_time_list[3][0]=='p':
+                ending_of_date="PM"
+            else:
+                ending_of_date="AM"
+
+            total_date = date+" "+the_time_list[2]+" "+ending_of_date
+            the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
+
 
         if the_time_string.date()!=todays_time_string.date():
             break
-
 
 
         home = game.select('a')[1].text
@@ -435,28 +484,6 @@ with app.app_context():
         tops = commentsoup.select('tr.top_inning')
         bottoms= commentsoup.select('tr.bottom_inning')
         tops.extend(bottoms)
-
-        date = box_score_data.select('.scorebox_meta')[0].select('div')[0].text
-        the_time = box_score_data.select('.scorebox_meta')[0].select('div')[1].text
-
-        # ipdb.set_trace()
-
-        the_time_list = the_time.split(' ')
-
-        
-        if the_time_list[3][0]=='p':
-            ending_of_date="PM"
-        else:
-            ending_of_date="AM"
-
-        total_date = date+" "+the_time_list[2]+" "+ending_of_date
-
-
-        the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
-
-        # if the_time_string > datetime(2021,9,6,22,00):
-        #     break
-            
 
         location = (box_score_data.select('.scorebox_meta')[0].select('div')[3].text)[7:]
         try:
@@ -510,9 +537,11 @@ with app.app_context():
 
         if len(weather.split(',')) > 3:
             precipitation = weather.replace('.','').split(',')[3][1:]
+            cloud_or_sun = weather.replace('.','').split(',')[2][1:]
         else: 
             precipitation = "In Dome"
-        cloud_or_sun = weather.replace('.','').split(',')[2][1:]
+            cloud_or_sun = "In Dome"
+
 
         match = Game(
             visitor= away,
@@ -552,6 +581,10 @@ with app.app_context():
         home_players_tables_comment = home_player_tables.find(string=lambda string:isinstance(string, Comment))
         home_players_tables_soup = BeautifulSoup(home_players_tables_comment , 'lxml')
         list_of_home_player_stats = home_players_tables_soup.select('tbody')[0].select('tr')
+
+        pitching_data = box_score_data.select('.section_wrapper')[1]
+        pitching_data_comment = pitching_data.find(string=lambda string:isinstance(string, Comment))
+        pitching_data_soup = BeautifulSoup(pitching_data_comment , 'lxml')
 
         #find the player objects and add a temporary team column
 
@@ -612,6 +645,28 @@ with app.app_context():
                         pitcher_sb_success = 1
                     sb_modifier = pitcher_sb_success*.7 + sb_modifier_final*.3
                     starting_lineup_player.sb_modifier = sb_modifier
+                    starting_pitcher_line = pitching_data_soup.select('tbody')[0].select('tr')[0]
+                    outs = (starting_pitcher_line.select('td')[0].text.replace(' ','').split('.'))
+                    if len(outs)>1:
+                        starting_lineup_player.innings = 3* int(outs[0]) + int(outs[1])
+                    else:
+                        starting_lineup_player.innings = 3 * int(outs[0])
+                    starting_lineup_player.ks = int(starting_pitcher_line.select('td')[5].text)
+                    hits = int(starting_pitcher_line.select('td')[1].text)
+                    runs = int(starting_pitcher_line.select('td')[3].text)
+                    walks = int(starting_pitcher_line.select('td')[4].text)
+                    away_pitcher_with_w_l = starting_pitcher_line.select('th')[0].text.split(',')
+                    extras = 0
+                    if len(away_pitcher_with_w_l) > 1:
+                        if "W" in away_pitcher_with_w_l[1]:
+                            extras+=4
+                    if starting_lineup_player.innings >=27:
+                        extras+=2.5
+                        if hits==0:
+                            extras+=5
+                        if runs==0:
+                            extras+=2.5
+                    starting_lineup_player.actual_value = (.75*starting_lineup_player.innings + 2*starting_lineup_player.ks - 2*runs - 0.6*(hits + walks) + extras)
 
                     pitcher_list.append(starting_lineup_player)
                 # else:
@@ -628,10 +683,46 @@ with app.app_context():
                         except IndexError:
                             ipdb.set_trace()
                         if item_name==name:
-                            item_abs = item.select('td')[0].text
-                            item_hits = item.select('td')[2].text
+                            item_abs = int(item.select('td')[0].text)
+                            item_runs = int(item.select('td')[1].text)
+                            item_hits = int(item.select('td')[2].text)
+                            item_rbis = int(item.select('td')[3].text)
+                            item_walks = int(item.select('td')[4].text)
+                            starting_lineup_player.sbs = 0
+                            homers = 0
+                            triples = 0
+                            doubles = 0
+                            for comment_item in item.select('td')[-1].text.split(','):
+                                if comment_item=="SB":
+                                    starting_lineup_player.sbs+=1
+                                elif "SB" in comment_item:
+                                    total_sbs = comment_item.split("·")
+                                    starting_lineup_player.sbs+=(int(total_sbs[0]))
+                                    continue
+                                if comment_item=="HR":
+                                    homers+=1
+                                elif "HR" in comment_item:
+                                    total_hrs = comment_item.split("·")
+                                    homers+=(int(total_hrs[0]))
+                                    continue
+                                if comment_item=="3B":
+                                    triples+=1
+                                elif "3B" in comment_item:
+                                    total_trips = comment_item.split("·")
+                                    triples+=(int(total_trips[0]))
+                                    continue
+                                if comment_item=="2B":
+                                    doubles+=1
+                                elif "2B" in comment_item:
+                                    total_doubs = comment_item.split("·")
+                                    doubles+=(int(total_doubs[0]))
+                                    continue
+                                if comment_item=="HBP":
+                                    item_walks+=1
+                            singles = item_hits - (homers + triples + doubles)
                             starting_lineup_player.hits = item_hits
                             starting_lineup_player.abs = item_abs
+                            starting_lineup_player.actual_value = (10*homers + 8*triples + 5*doubles + 3*singles + 2*item_walks + 5*starting_lineup_player.sbs + 2*item_runs + 2*item_rbis)
                             break
                     hitter_list.append(starting_lineup_player)
                 # else:
@@ -639,8 +730,12 @@ with app.app_context():
 
         for player in home_players:
             name = unidecode(player.select('td')[1].text)
-            if name[0]==" ":
-                name=name[1:]
+            try:
+                if name[0]==" ":
+                    name=name[1:]
+            except IndexError:
+                continue
+                
             position = player.select('td')[2].text
             if "P" in position:
                 pitcher_options = Pitcher.query.filter(Pitcher.name==name).all()
@@ -686,7 +781,28 @@ with app.app_context():
                     
                     sb_modifier = pitcher_sb_success*.7 + sb_modifier_final*.3
                     starting_lineup_player.sb_modifier = sb_modifier
-
+                    starting_pitcher_line = pitching_data_soup.select('tbody')[1].select('tr')[0]
+                    outs = (starting_pitcher_line.select('td')[0].text.replace(' ','').split('.'))
+                    if len(outs)>1:
+                        starting_lineup_player.innings = 3* int(outs[0]) + int(outs[1])
+                    else:
+                        starting_lineup_player.innings = 3 * int(outs[0])
+                    starting_lineup_player.ks = int(starting_pitcher_line.select('td')[5].text)
+                    hits = int(starting_pitcher_line.select('td')[1].text)
+                    runs = int(starting_pitcher_line.select('td')[3].text)
+                    walks = int(starting_pitcher_line.select('td')[4].text)
+                    home_pitcher_with_w_l = starting_pitcher_line.select('th')[0].text.split(',')
+                    extras = 0
+                    if len(home_pitcher_with_w_l) > 1:
+                        if "W" in home_pitcher_with_w_l[1]:
+                            extras+=4
+                    if starting_lineup_player.innings >=27:
+                        extras+=2.5
+                        if hits==0:
+                            extras+=5
+                        if runs==0:
+                            extras+=2.5
+                    starting_lineup_player.actual_value = (.75*starting_lineup_player.innings + 2*starting_lineup_player.ks - 2*runs - 0.6*(hits + walks) + extras)
                     pitcher_list.append(starting_lineup_player)
                 # else:
                 #     ipdb.set_trace()
@@ -698,18 +814,59 @@ with app.app_context():
                     for item in list_of_home_player_stats:
                         item_name = unidecode(item.select('th')[0].select('a')[0].text)
                         if item_name==name:
-                            item_abs = item.select('td')[0].text
-                            item_hits = item.select('td')[2].text
+                            item_abs = int(item.select('td')[0].text)
+                            item_runs = int(item.select('td')[1].text)
+                            item_hits = int(item.select('td')[2].text)
+                            item_rbis = int(item.select('td')[3].text)
+                            item_walks = int(item.select('td')[4].text)
+                            starting_lineup_player.sbs = 0
+                            homers = 0
+                            triples = 0
+                            doubles = 0
+                            for comment_item in item.select('td')[-1].text.split(','):
+                                if comment_item=="SB":
+                                    starting_lineup_player.sbs+=1
+                                elif "SB" in comment_item:
+                                    total_sbs = comment_item.split("·")
+                                    starting_lineup_player.sbs+=(int(total_sbs[0]))
+                                    continue
+                                if comment_item=="HR":
+                                    homers+=1
+                                elif "HR" in comment_item:
+                                    total_hrs = comment_item.split("·")
+                                    homers+=(int(total_hrs[0]))
+                                    continue
+                                if comment_item=="3B":
+                                    triples+=1
+                                elif "3B" in comment_item:
+                                    total_trips = comment_item.split("·")
+                                    triples+=(int(total_trips[0]))
+                                    continue
+                                if comment_item=="2B":
+                                    doubles+=1
+                                elif "2B" in comment_item:
+                                    total_doubs = comment_item.split("·")
+                                    doubles+=(int(total_doubs[0]))
+                                    continue
+                                if comment_item=="HBP":
+                                    item_walks+=1
+                            singles = item_hits - (homers + triples + doubles)
                             starting_lineup_player.hits = item_hits
                             starting_lineup_player.abs = item_abs
+                            starting_lineup_player.actual_value = (10*homers + 8*triples + 5*doubles + 3*singles + 2*item_walks + 5*starting_lineup_player.sbs + 2*item_runs + 2*item_rbis)
                             break
                     hitter_list.append(starting_lineup_player)
                 # else:
                 #     ipdb.set_trace()
+
+        ipdb.set_trace()
     
     bets = []
 
-    number_of_abs = -50
+    
+
+    number_of_abs = -140
+    first_value_comparer = .55
 
     
     # print("Made it to the loop")
@@ -806,7 +963,7 @@ with app.app_context():
                     hitter_same_avg = same_side_hits/len(same_side_abs)
                 except ZeroDivisionError:
                     hitter_same_avg = league_avg
-                batter_side_modifier = (0.35 * pitcher_same_avg/league_avg ) + (0.65 * hitter_same_avg/league_avg)
+                batter_side_modifier = (0.9 * pitcher_same_avg/league_avg ) + (0.1 * hitter_same_avg/league_avg)
 
             else:
 
@@ -827,7 +984,7 @@ with app.app_context():
                     hitter_opposite_avg = oppo_taco_hits/len(oppo_taco_abs)
                 except ZeroDivisionError:
                     hitter_opposite_avg = league_avg
-                batter_side_modifier = (0.35 * pitcher_opposite_avg/league_avg ) + (0.65 * hitter_opposite_avg/league_avg)
+                batter_side_modifier = (0.9 * pitcher_opposite_avg/league_avg ) + (0.1 * hitter_opposite_avg/league_avg)
 
             #babip modifier)
             
@@ -845,7 +1002,8 @@ with app.app_context():
             in_play_modifier = (pitcher_in_play_percentage + hitter_in_play_percentage) / (2 * league_in_play_percentage)
 
 
-            result_modifier = (0.275 * babip_modifier + 0.05 * in_play_modifier + 0.675 * batter_side_modifier)
+            result_modifier = (.1 * babip_modifier + .7 * in_play_modifier + 0.1 * batter_side_modifier)
+            # result_modifier = (babip_modifier + in_play_modifier + batter_side_modifier)/3
 
 
             # print("Got em")
@@ -949,10 +1107,18 @@ with app.app_context():
                 # ipdb.set_trace()
 
             #wind speed
-            wind_speed_high = int(game.wind_speed) + 2
-            wind_speed_low = int(game.wind_speed) - 2
 
-            wind_speed_abs = [ab for ab in abs if wind_speed_low <= ab.game.wind_speed <= wind_speed_high][number_of_abs:]
+            if len(game.wind_speed) > 0:
+                try:
+                    wind_speed_high = int(game.wind_speed) + 2
+                except ValueError:
+                    ipdb.set_trace()
+                wind_speed_low = int(game.wind_speed) - 2
+
+                wind_speed_abs = [ab for ab in abs if wind_speed_low <= ab.game.wind_speed <= wind_speed_high][number_of_abs:]
+
+            else:
+                wind_speed_abs = []
 
             #sunny/cloudy
             #Overcast, Sunny, Cloudy, In Dome
@@ -1115,25 +1281,42 @@ with app.app_context():
             #     {"abs_vs_left_right":{"array":abs_vs_left_right,"stdev":stdev([ab.result_stdev for ab in abs_vs_left_right])}}
             #     ]
 
-            hit_stdev_array = [{"name":"temperature_abs","array":temperature_abs,"stdev":stdev([ab.result_stdev for ab in temperature_abs]) if len(temperature_abs)>4 else 500},
-                {"name":"abs_vs_team","array":abs_vs_team,"stdev":stdev([ab.result_stdev for ab in abs_vs_team]) if len(abs_vs_team)>4 else 500},
-                {"name":"precipitation_abs","array":precipitation_abs,"stdev":stdev([ab.result_stdev for ab in precipitation_abs]) if len(precipitation_abs)>4 else 500},
-                {"name":"cloud_or_sun_abs","array":cloud_or_sun_abs,"stdev":stdev([ab.result_stdev for ab in cloud_or_sun_abs]) if len(cloud_or_sun_abs)>4 else 500},
-                {"name":"wind_speed_abs","array":wind_speed_abs,"stdev":stdev([ab.result_stdev for ab in wind_speed_abs]) if len(wind_speed_abs)>4 else 500},
-                {"name":"wind_direction_abs","array":wind_direction_abs,"stdev":stdev([ab.result_stdev for ab in wind_direction_abs]) if len(wind_direction_abs)>4 else 500},
-                {"name":"at_stadium","array":at_stadium,"stdev":stdev([ab.result_stdev for ab in at_stadium]) if len(at_stadium)>4 else 500},
-                {"name":"abs_at_time","array":abs_at_time,"stdev":stdev([ab.result_stdev for ab in abs_at_time]) if len(abs_at_time)>4 else 500},
-                {"name":"abs_on_day","array":abs_on_day,"stdev":stdev([ab.result_stdev for ab in abs_on_day]) if len(abs_on_day)>4 else 500},
-                {"name":"latest_games","array":latest_games,"stdev":stdev([ab.result_stdev for ab in latest_games]) if len(latest_games)>4 else 500},
-                {"name":"latest_home_or_away_abs","array":latest_home_or_away_abs,"stdev":stdev([ab.result_stdev for ab in latest_home_or_away_abs]) if len(latest_home_or_away_abs)>4 else 500},
-                {"name":"abs_vs_opponent","array":abs_vs_opponent,"stdev":stdev([ab.result_stdev for ab in abs_vs_opponent]) if len(abs_vs_opponent)>4 else 500},
-                {"name":"abs_vs_left_right","array":abs_vs_left_right,"stdev":stdev([ab.result_stdev for ab in abs_vs_left_right]) if len(abs_vs_left_right)>4 else 500}
+            how_many_abs = 8
+
+
+            hit_stdev_array = [{"name":"temperature_abs","array":temperature_abs,"stdev":stdev([ab.result_stdev for ab in temperature_abs]) if len(temperature_abs)>how_many_abs else 500},
+                {"name":"abs_vs_team","array":abs_vs_team,"stdev":stdev([ab.result_stdev for ab in abs_vs_team]) if len(abs_vs_team)>how_many_abs else 500},
+                {"name":"precipitation_abs","array":precipitation_abs,"stdev":stdev([ab.result_stdev for ab in precipitation_abs]) if len(precipitation_abs)>how_many_abs else 500},
+                {"name":"cloud_or_sun_abs","array":cloud_or_sun_abs,"stdev":stdev([ab.result_stdev for ab in cloud_or_sun_abs]) if len(cloud_or_sun_abs)>how_many_abs else 500},
+                {"name":"wind_speed_abs","array":wind_speed_abs,"stdev":stdev([ab.result_stdev for ab in wind_speed_abs]) if len(wind_speed_abs)>how_many_abs else 500},
+                {"name":"wind_direction_abs","array":wind_direction_abs,"stdev":stdev([ab.result_stdev for ab in wind_direction_abs]) if len(wind_direction_abs)>how_many_abs else 500},
+                {"name":"at_stadium","array":at_stadium,"stdev":stdev([ab.result_stdev for ab in at_stadium]) if len(at_stadium)>how_many_abs else 500},
+                {"name":"abs_at_time","array":abs_at_time,"stdev":stdev([ab.result_stdev for ab in abs_at_time]) if len(abs_at_time)>how_many_abs else 500},
+                {"name":"abs_on_day","array":abs_on_day,"stdev":stdev([ab.result_stdev for ab in abs_on_day]) if len(abs_on_day)>how_many_abs else 500},
+                {"name":"latest_games","array":latest_games,"stdev":stdev([ab.result_stdev for ab in latest_games]) if len(latest_games)>how_many_abs else 500},
+                {"name":"latest_home_or_away_abs","array":latest_home_or_away_abs,"stdev":stdev([ab.result_stdev for ab in latest_home_or_away_abs]) if len(latest_home_or_away_abs)>how_many_abs else 500},
+                {"name":"abs_vs_opponent","array":abs_vs_opponent,"stdev":stdev([ab.result_stdev for ab in abs_vs_opponent]) if len(abs_vs_opponent)>how_many_abs else 500},
+                {"name":"abs_vs_left_right","array":abs_vs_left_right,"stdev":stdev([ab.result_stdev for ab in abs_vs_left_right]) if len(abs_vs_left_right)>how_many_abs else 500}
                 ]
+
+            sb_stdev_array = [{"name":"temperature_abs","array":temperature_abs,"stdev":stdev([ab.sb for ab in temperature_abs]) if len(temperature_abs)>how_many_abs else 500},
+                    {"name":"abs_vs_team","array":abs_vs_team,"stdev":stdev([ab.sb for ab in abs_vs_team]) if len(abs_vs_team)>how_many_abs else 500},
+                    {"name":"precipitation_abs","array":precipitation_abs,"stdev":stdev([ab.sb for ab in precipitation_abs]) if len(precipitation_abs)>how_many_abs else 500},
+                    {"name":"cloud_or_sun_abs","array":cloud_or_sun_abs,"stdev":stdev([ab.sb for ab in cloud_or_sun_abs]) if len(cloud_or_sun_abs)>how_many_abs else 500},
+                    {"name":"wind_speed_abs","array":wind_speed_abs,"stdev":stdev([ab.sb for ab in wind_speed_abs]) if len(wind_speed_abs)>how_many_abs else 500},
+                    {"name":"wind_direction_abs","array":wind_direction_abs,"stdev":stdev([ab.sb for ab in wind_direction_abs]) if len(wind_direction_abs)>how_many_abs else 500},
+                    {"name":"at_stadium","array":at_stadium,"stdev":stdev([ab.sb for ab in at_stadium]) if len(at_stadium)>how_many_abs else 500},
+                    {"name":"abs_at_time","array":abs_at_time,"stdev":stdev([ab.sb for ab in abs_at_time]) if len(abs_at_time)>how_many_abs else 500},
+                    {"name":"abs_on_day","array":abs_on_day,"stdev":stdev([ab.sb for ab in abs_on_day]) if len(abs_on_day)>how_many_abs else 500},
+                    {"name":"latest_games","array":latest_games,"stdev":stdev([ab.sb for ab in latest_games]) if len(latest_games)>how_many_abs else 500},
+                    {"name":"latest_home_or_away_abs","array":latest_home_or_away_abs,"stdev":stdev([ab.sb for ab in latest_home_or_away_abs]) if len(latest_home_or_away_abs)>how_many_abs else 500},
+                    {"name":"abs_vs_opponent","array":abs_vs_opponent,"stdev":stdev([ab.sb for ab in abs_vs_opponent]) if len(abs_vs_opponent)>how_many_abs else 500},
+                    {"name":"abs_vs_left_right","array":abs_vs_left_right,"stdev":stdev([ab.sb for ab in abs_vs_left_right]) if len(abs_vs_left_right)>how_many_abs else 500}
+                    ]
 
             # if player_name=="Connor Wong" or player_name=="Christian Arroyo":
             #     ipdb.set_trace()   
-
-            sorted_hit_stdev = sorted(hit_stdev_array,key=itemgetter('stdev'))
+        
 
             first_value = 0
             second_value = 0
@@ -1148,43 +1331,484 @@ with app.app_context():
 
             # print("made a sorted list")
 
-           
+        
 
             new_stdev_list = []
-            for value in sorted_hit_stdev:
-                if value["stdev"] < .48:
+            for value in hit_stdev_array:
+                if value["stdev"] < .45:
                     new_stdev_list.append(value)
+
+            if len(new_stdev_list) > 0:
+
+                # print("We've got the new one. Start big giant")
+
+                # ipdb.set_trace()
+
+                big_giant = abs_vs_opponent.copy()
+                big_giant.extend(abs_vs_left_right)
+                big_giant.extend(latest_home_or_away_abs)
+                big_giant.extend(latest_games)
+                big_giant.extend(abs_on_day)
+                big_giant.extend(abs_at_time)
+                big_giant.extend(at_stadium)
+                big_giant.extend(wind_direction_abs)
+                big_giant.extend(wind_speed_abs)
+                big_giant.extend(cloud_or_sun_abs)
+                big_giant.extend(precipitation_abs)
+                big_giant.extend(abs_vs_team)
+                big_giant.extend(temperature_abs)
+            
+
+                abs_in_common = []
+                for item in big_giant:
+                    i = 0
+                    if item not in abs_in_common and item.hitter.name==player_name:
+                        for secondary in big_giant:
+                            if item==secondary:
+                                i+=1
+                        if i > 4:
+                            abs_in_common.append({"item":item,"how_many":i})
+
+                if len(abs_in_common) > how_many_abs:
+                
+                    sorted_abs_in_common = sorted(abs_in_common,key=itemgetter('how_many'))
+                    sorted_abs_in_common.reverse()
+
+                    high_ab_in_common = sorted_abs_in_common[0]["how_many"]
+                    diffy = high_ab_in_common-.4*high_ab_in_common
+
+                    new_sorted_abs_in_common = [ab for ab in sorted_abs_in_common if ab["how_many"] > diffy][number_of_abs:]
+                    final_sorted_abs_in_common = {"name":"abs_in_common","array":[ab["item"] for ab in new_sorted_abs_in_common],"stdev":stdev([ab["item"].result_stdev for ab in new_sorted_abs_in_common])}
+                    if len(sorted_abs_in_common) > 5:
+                        new_stdev_list.insert(0,final_sorted_abs_in_common)
+
+                new_stdev_list = sorted(new_stdev_list,key=itemgetter('stdev'))
+
+                # print("Big giant done. Create player_value")
+
+
+                if len(new_stdev_list)==1:
+                    first_value = 1.15 * mean([ab.result_stdev for ab in new_stdev_list[0]["array"]])
+                elif len(new_stdev_list)>1:
+                    if len(new_stdev_list)==2:
+                        first_value = .65 * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
+                        second_value = .3 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
+                    elif len(new_stdev_list)==3:
+                        first_value = first_value_comparer * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
+                        second_value = .25 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
+                        third_value = .15 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
+                    elif len(new_stdev_list)==4:
+                        first_value = first_value_comparer * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
+                        second_value = .25 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
+                        third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
+                        fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
+                    elif len(new_stdev_list)==5:
+                        first_value = first_value_comparer * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
+                        second_value = .225 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
+                        third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
+                        fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
+                        fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
+                    elif len(new_stdev_list)==6:
+                        first_value = first_value_comparer * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
+                        second_value = .2 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
+                        third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
+                        fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
+                        fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
+                        sixth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[5]["array"])
+                    elif len(new_stdev_list)==7:
+                        first_value = first_value_comparer * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
+                        second_value = .175 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
+                        third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
+                        fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
+                        fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
+                        sixth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[5]["array"])
+                        seventh_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[6]["array"])
+                    elif len(new_stdev_list)==8:
+                        first_value = first_value_comparer * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
+                        second_value = .175 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
+                        third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
+                        fourth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
+                        fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
+                        sixth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[5]["array"])
+                        seventh_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[6]["array"])
+                        eigth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[7]["array"])
+                    elif len(new_stdev_list)==9:
+                        first_value = first_value_comparer * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
+                        second_value = .175 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
+                        third_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
+                        fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
+                        fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
+                        sixth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[5]["array"])
+                        seventh_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[6]["array"])
+                        eigth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[7]["array"])
+                        ninth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[8]["array"])
+                    elif len(new_stdev_list)>=10:
+                        first_value = first_value_comparer * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
+                        second_value = .175 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
+                        third_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
+                        fourth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
+                        fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
+                        sixth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[5]["array"])
+                        seventh_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[6]["array"])
+                        eigth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[7]["array"])
+                        ninth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[8]["array"])
+                        tenth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[9]["array"])
+                    else:
+                        continue
+
+
+
+
+                    sorted_sb_stdev_list = sorted(sb_stdev_array,key=itemgetter('stdev'))
+
+                    sb_value = mean(game.sb for game in sorted_sb_stdev_list[0]["array"])
+
+                    sb_total_value = sb_value * total_sb_modifier
+
+
+                    hit_formula = first_value + second_value + third_value + fourth_value + fifth_value + sixth_value + seventh_value + eigth_value + ninth_value + tenth_value
+                
+                    player_value = hit_formula * result_modifier
+
+                    bets.append({"name":player_name,"position":"H","value":round(player_value,4),"hits/ks":player.hits,"sbs/outs":player.sbs,"abs":player.abs,"first":new_stdev_list[0]["name"],"stdev_1":new_stdev_list[0]["stdev"],"second":new_stdev_list[1]["name"],"stdev_2":new_stdev_list[1]["stdev"]})
+
+                    # print("Nice. On to the next")
+
+    for player in pitcher_list:
+
+        player_name = player.name
+        player_team = player.team
+        main_game = [game for game in todays_games if game.home==player_team or game.visitor==player_team][0]
+        if game.home==player_team:
+            other_team = game.visitor
+        else:
+            other_team = game.home
+    
+
+
+        # specific_time = datetime(2024,1,21,16,30,00)
+        #and specific_time.time() < [game["time"] for game in todays_games if game["home"]==player_team or game["away"]==player_team][0]
+
+        # if ([game.date.time() for game in game_list if game.home==player_team or game.visitor==player_team][0] > format_time)
+
+        print(f"{player_name} ({player_team})")
+
+
+        games = list(set(player.games))
+        abs = [ab for ab in player.at_bats if ab.game]
+
+        # print("Start Modifiers")
+
+        #find k modifier, have league_k_perc
+        #will also need innings pitched modifier
+        #already have sb_modifier
+
+        ks_list = []
+        for game in games:
+            pitcher_counted_abs = [ab for ab in abs if ab.result!="Sacrifice" and ab.result!="Walk" and ab.result!="Hit" and "Interference" not in ab.result]
+            pitcher_strikeout_abs = len([ab for ab in pitcher_counted_abs if "Strikeout" in ab.result])
+            ks_list.append(pitcher_strikeout_abs/len(pitcher_counted_abs))
+        pitcher_strikeout_rate = mean(ks_list)
+
+        #innings pitched modifier
+            #loop through each game and find total abs where an out was recorded
+            #compare it to league average innings pitched
+
+        #league_avg_outs
+        #find player avg outs
+
+        list_of_outs = []
+        for out_game in games:
+            outs = [ab for ab in out_game.at_bats if "Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result]
+            pitcher_outs = len([ab for ab in outs if ab.pitcher==player])
+            list_of_outs.append(pitcher_outs)
+        pitcher_outs_modifier = mean(list_of_outs)
+
+        outs_modifier = pitcher_outs_modifier/league_avg_outs
+
+       
+        
+        #latest 25 games at time
+        upper_hour = main_game.date.hour+1
+        lower_hour = main_game.date.hour-1
+        minutes = main_game.date.minute
+        upper_time = datetime(2023,2,1,upper_hour,minutes).time()
+        lower_time = datetime(2023,2,1,lower_hour,minutes).time()
+        games_at_time = [game for game in games if game.date.time()<=upper_time and game.date.time()>=lower_time][number_of_abs:]
+        games_at_time_list = []
+        for game in games_at_time:
+            strikeouts = len([ab for ab in game.at_bats if ab.pitcher==player and "Strikeout" in ab.result])
+            innings_pitched = len([ab for ab in game.at_bats if (ab.pitcher==player) and ("Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result)])
+            game_dict = {"strikeouts":strikeouts, "innings_pitched":innings_pitched}
+            games_at_time_list.append(game_dict)
+        
+
+        #last 25 games on specific day
+        current_day = current_date.weekday()
+        games_on_day = [game for game in games if game.date.weekday()==current_day][number_of_abs:]
+        games_on_day_list = []
+        for game in games_on_day:
+            strikeouts = len([ab for ab in game.at_bats if ab.pitcher==player and "Strikeout" in ab.result])
+            innings_pitched = len([ab for ab in game.at_bats if (ab.pitcher==player) and ("Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result)])
+            game_dict = {"strikeouts":strikeouts, "innings_pitched":innings_pitched}
+            games_on_day_list.append(game_dict)
+
+
+    
+        #latest_games
+        latest_games = [game for game in games][number_of_abs:]
+        latest_games_list = []
+        for game in latest_games:
+            strikeouts = len([ab for ab in game.at_bats if ab.pitcher==player and "Strikeout" in ab.result])
+            innings_pitched = len([ab for ab in game.at_bats if (ab.pitcher==player) and ("Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result)])
+            game_dict = {"strikeouts":strikeouts, "innings_pitched":innings_pitched}
+            latest_games_list.append(game_dict)
+
+
+
+        #home/away games
+        if main_game.home==player_team:
+            latest_home_or_away_games = [game for game in games if game.home==player_team][number_of_abs:]
+        else:
+            latest_home_or_away_games = [game for game in games if game.visitor==player_team][number_of_abs:]
+        latest_home_or_away_games_list = []
+        for game in latest_home_or_away_games:
+            strikeouts = len([ab for ab in game.at_bats if ab.pitcher==player and "Strikeout" in ab.result])
+            innings_pitched = len([ab for ab in game.at_bats if (ab.pitcher==player) and ("Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result)])
+            game_dict = {"strikeouts":strikeouts, "innings_pitched":innings_pitched}
+            latest_home_or_away_games_list.append(game_dict)
+
+
+
+
+        #last 50 at stadium
+        at_stadium = [game for game in games if game.location == main_game.location][number_of_abs:]
+        at_stadium_list = []
+        for game in at_stadium:
+            strikeouts = len([ab for ab in game.at_bats if ab.pitcher==player and "Strikeout" in ab.result])
+            innings_pitched = len([ab for ab in game.at_bats if (ab.pitcher==player) and ("Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result)])
+            game_dict = {"strikeouts":strikeouts, "innings_pitched":innings_pitched}
+            at_stadium_list.append(game_dict)
+
+        #last 50 with wind direction
+
+        if game.wind_direction == 400:
+            wind_direction_games = [game for game in games if game.precipitation=="In Dome"][number_of_abs:]
+
+        else:
+            wind_high = main_game.wind_direction + 22.5
+            wind_low = main_game.wind_direction - 22.5
+
+            wind_direction_games = [game for game in games if wind_low <= game.wind_direction <= wind_high][number_of_abs:]
+
+        wind_direction_games_list = []
+        for game in wind_direction_games:
+            strikeouts = len([ab for ab in game.at_bats if ab.pitcher==player and "Strikeout" in ab.result])
+            innings_pitched = len([ab for ab in game.at_bats if (ab.pitcher==player) and ("Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result)])
+            game_dict = {"strikeouts":strikeouts, "innings_pitched":innings_pitched}
+            wind_direction_games_list.append(game_dict)
+
+
+        #wind speed
+
+        if len(main_game.wind_speed) > 0:
+            try:
+                wind_speed_high = int(main_game.wind_speed) + 2
+            except ValueError:
+                ipdb.set_trace()
+            wind_speed_low = int(main_game.wind_speed) - 2
+
+            wind_speed_games = [game for game in games if wind_speed_low <= game.wind_speed <= wind_speed_high][number_of_abs:]
+
+        else:
+            wind_speed_games = []
+
+        wind_speed_games_list = []
+        for game in wind_speed_games:
+            strikeouts = len([ab for ab in game.at_bats if ab.pitcher==player and "Strikeout" in ab.result])
+            innings_pitched = len([ab for ab in game.at_bats if (ab.pitcher==player) and ("Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result)])
+            game_dict = {"strikeouts":strikeouts, "innings_pitched":innings_pitched}
+            wind_speed_games_list.append(game_dict)
+
+        #sunny/cloudy
+        #Overcast, Sunny, Cloudy, In Dome
+        if main_game.cloud_or_sun=="Cloudy" or main_game.cloud_or_sun=="Overcast":
+            cloud_or_sun_games = [games for games in games if game.cloud_or_sun=="Cloudy" or game.cloud_or_sun=="Overcast"][number_of_abs:]
+        elif main_game.cloud_or_sun=="Sunny":
+            cloud_or_sun_games = [game for game in games if game.cloud_or_sun=="Sunny"][number_of_abs:]
+        else:
+            cloud_or_sun_games = []
+
+        cloud_or_sun_games_list = []
+        for game in cloud_or_sun_games:
+            strikeouts = len([ab for ab in game.at_bats if ab.pitcher==player and "Strikeout" in ab.result])
+            innings_pitched = len([ab for ab in game.at_bats if (ab.pitcher==player) and ("Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result)])
+            game_dict = {"strikeouts":strikeouts, "innings_pitched":innings_pitched}
+            cloud_or_sun_games_list.append(game_dict)
+
+
+        #precipitation
+        if main_game.precipitation=="Rain":
+            precipitation_games = [game for game in games if game.precipitation=="Rain" or game.precipitation=="Drizzle"][number_of_abs:]
+        elif main_game.precipitation=="Snow":
+            precipitation_games = [game for game in games if game.precipitation=="Snow"][number_of_abs:]
+        else:
+            precipitation_games = []
+
+        precipitation_games_list = []
+        for game in precipitation_games:
+            strikeouts = len([ab for ab in game.at_bats if ab.pitcher==player and "Strikeout" in ab.result])
+            innings_pitched = len([ab for ab in game.at_bats if (ab.pitcher==player) and ("Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result)])
+            game_dict = {"strikeouts":strikeouts, "innings_pitched":innings_pitched}
+            precipitation_games_list.append(game_dict)
+
+
+        #temperature
+        freezing = 35
+        real_cold = 42
+        very_cold = 47
+        cold = 62
+        nice = 78
+        hot = 88
+        too_hot = 97
+
+        the_temperature = int(main_game.temperature)
+
+        if the_temperature <= freezing:
+            temperature_games = [game for game in games if the_temperature <= freezing][number_of_abs:]
+        elif freezing < the_temperature <= real_cold:
+            temperature_games = [game for game in games if freezing < the_temperature <= real_cold][number_of_abs:]
+        elif real_cold < the_temperature <= very_cold:
+            temperature_games = [game for game in games if real_cold < the_temperature <= very_cold][number_of_abs:]
+        elif very_cold < the_temperature <= cold:
+            temperature_games = [game for game in games if very_cold < the_temperature <= cold][number_of_abs:]
+        elif cold < the_temperature <= nice:
+            temperature_games = [game for game in games if cold < the_temperature <= nice][number_of_abs:]
+        elif nice < the_temperature <= hot:
+            temperature_games = [game for game in games if nice < the_temperature <= hot][number_of_abs:]
+        elif hot < the_temperature <= too_hot:
+            temperature_games = [game for game in games if hot < the_temperature <= too_hot][number_of_abs:]
+        else:
+            temperature_games = [game for game in games if the_temperature > too_hot][number_of_abs:]
+
+
+        temperature_games_list = []
+        for game in temperature_games:
+            strikeouts = len([ab for ab in game.at_bats if ab.pitcher==player and "Strikeout" in ab.result])
+            innings_pitched = len([ab for ab in game.at_bats if (ab.pitcher==player) and ("Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result)])
+            game_dict = {"strikeouts":strikeouts, "innings_pitched":innings_pitched}
+            temperature_games_list.append(game_dict)
+
+        #vs team
+        games_vs_team = [game for game in games if game.home==other_team or game.visitor==other_team][number_of_abs:]
+        games_vs_team_list = []
+        for game in games_vs_team:
+            strikeouts = len([ab for ab in game.at_bats if ab.pitcher==player and "Strikeout" in ab.result])
+            innings_pitched = len([ab for ab in game.at_bats if (ab.pitcher==player) and ("Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result)])
+            game_dict = {"strikeouts":strikeouts, "innings_pitched":innings_pitched}
+            games_vs_team_list.append(game_dict)
+
+
+
+        how_many_abs = 8
+
+
+        ks_stdev_array = [{"name":"temperature_games_list","array":temperature_games_list,"stdev":stdev([game["strikeouts"]/5 for game in temperature_games_list]) if len(temperature_games_list)>how_many_abs else 500},
+            {"name":"games_vs_team_list","array":games_vs_team_list,"stdev":stdev([game["strikeouts"]/5 for game in games_vs_team_list]) if len(games_vs_team_list)>how_many_abs else 500},
+            {"name":"precipitation_games_list","array":precipitation_games_list,"stdev":stdev([game["strikeouts"]/5 for game in precipitation_games_list]) if len(precipitation_games_list)>how_many_abs else 500},
+            {"name":"cloud_or_sun_games_list","array":cloud_or_sun_games_list,"stdev":stdev([game["strikeouts"]/5 for game in cloud_or_sun_games_list]) if len(cloud_or_sun_games_list)>how_many_abs else 500},
+            {"name":"wind_speed_games_list","array":wind_speed_games_list,"stdev":stdev([game["strikeouts"]/5 for game in wind_speed_games_list]) if len(wind_speed_games_list)>how_many_abs else 500},
+            {"name":"wind_direction_games_list","array":wind_direction_games_list,"stdev":stdev([game["strikeouts"]/5 for game in wind_direction_games_list]) if len(wind_direction_games_list)>how_many_abs else 500},
+            {"name":"at_stadium_list","array":at_stadium_list,"stdev":stdev([game["strikeouts"]/5 for game in at_stadium_list]) if len(at_stadium_list)>how_many_abs else 500},
+            {"name":"games_at_time_list","array":games_at_time_list,"stdev":stdev([game["strikeouts"]/5 for game in games_at_time_list]) if len(games_at_time_list)>how_many_abs else 500},
+            {"name":"games_on_day_list","array":games_on_day_list,"stdev":stdev([game["strikeouts"]/5 for game in games_on_day_list]) if len(games_on_day_list)>how_many_abs else 500},
+            {"name":"latest_games_list","array":latest_games_list,"stdev":stdev([game["strikeouts"]/5 for game in latest_games_list]) if len(latest_games_list)>how_many_abs else 500},
+            {"name":"latest_home_or_away_games_list","array":latest_home_or_away_games_list,"stdev":stdev([game["strikeouts"]/5 for game in latest_home_or_away_games_list]) if len(latest_home_or_away_games_list)>how_many_abs else 500},
+           ]
+
+        # innings_stdev_array = [{"name":"temperature_games_list","array":temperature_games_list,"stdev":stdev([game["innings_pitched"]/14 for game in temperature_games_list]) if len(temperature_games_list)>how_many_abs else 500},
+        #     {"name":"games_vs_team_list","array":games_vs_team_list,"stdev":stdev([game["innings_pitched"]/14 for game in games_vs_team_list]) if len(games_vs_team_list)>how_many_abs else 500},
+        #     {"name":"precipitation_games_list","array":precipitation_games_list,"stdev":stdev([game["innings_pitched"]/14 for game in precipitation_games_list]) if len(precipitation_games_list)>how_many_abs else 500},
+        #     {"name":"cloud_or_sun_games_list","array":cloud_or_sun_games_list,"stdev":stdev([game["innings_pitched"]/14 for game in cloud_or_sun_games_list]) if len(cloud_or_sun_games_list)>how_many_abs else 500},
+        #     {"name":"wind_speed_games_list","array":wind_speed_games_list,"stdev":stdev([game["innings_pitched"]/14 for game in wind_speed_games_list]) if len(wind_speed_games_list)>how_many_abs else 500},
+        #     {"name":"wind_direction_games_list","array":wind_direction_games_list,"stdev":stdev([game["innings_pitched"]/14 for game in wind_direction_games_list]) if len(wind_direction_games_list)>how_many_abs else 500},
+        #     {"name":"at_stadium_list","array":at_stadium_list,"stdev":stdev([game["innings_pitched"]/14 for game in at_stadium_list]) if len(at_stadium_list)>how_many_abs else 500},
+        #     {"name":"games_at_time_list","array":games_at_time_list,"stdev":stdev([game["innings_pitched"]/14 for game in games_at_time_list]) if len(games_at_time_list)>how_many_abs else 500},
+        #     {"name":"games_on_day_list","array":games_on_day_list,"stdev":stdev([game["innings_pitched"]/14 for game in games_on_day_list]) if len(games_on_day_list)>how_many_abs else 500},
+        #     {"name":"latest_games_list","array":latest_games_list,"stdev":stdev([game["innings_pitched"]/14 for game in latest_games_list]) if len(latest_games_list)>how_many_abs else 500},
+        #     {"name":"latest_home_or_away_games_list","array":latest_home_or_away_games_list,"stdev":stdev([game["innings_pitched"]/14 for game in latest_home_or_away_games_list]) if len(latest_home_or_away_games_list)>how_many_abs else 500},
+        #    ]
+
+        # if player_name=="Connor Wong" or player_name=="Christian Arroyo":
+        #     ipdb.set_trace()   
+    
+
+        first_value = 0
+        second_value = 0
+        third_value = 0
+        fourth_value = 0
+        fifth_value = 0
+        sixth_value = 0
+        seventh_value = 0
+        eigth_value = 0
+        ninth_value = 0
+        tenth_value = 0
+
+        # first_inn_value = 0
+        # second_inn_value = 0
+        # third_inn_value = 0
+        # fourth_inn_value = 0
+        # fifth_inn_value = 0
+        # sixth_inn_value = 0
+        # seventh_inn_value = 0
+        # eigth_inn_value = 0
+        # ninth_inn_value = 0
+        # tenth_inn_value = 0
+
+        # print("made a sorted list")
+
+    
+
+        new_ks_stdev_list = []
+        for value in ks_stdev_array:
+            if value["stdev"] < 300:
+                new_ks_stdev_list.append(value)
+
+        # new_innings_stdev_list = []
+        # for value in innings_stdev_array:
+        #     if value["stdev"] < 300:
+        #         new_innings_stdev_list.append(value)
+
+        if len(new_ks_stdev_list) > 0:
 
             # print("We've got the new one. Start big giant")
 
             # ipdb.set_trace()
 
-            big_giant = abs_vs_opponent.copy()
-            big_giant.extend(abs_vs_left_right)
-            big_giant.extend(latest_home_or_away_abs)
-            big_giant.extend(latest_games)
-            big_giant.extend(abs_on_day)
-            big_giant.extend(abs_at_time)
-            big_giant.extend(at_stadium)
-            big_giant.extend(wind_direction_abs)
-            big_giant.extend(wind_speed_abs)
-            big_giant.extend(cloud_or_sun_abs)
-            big_giant.extend(precipitation_abs)
-            big_giant.extend(abs_vs_team)
-            big_giant.extend(temperature_abs)
+            big_giant = temperature_games_list.copy()
+            big_giant.extend(latest_home_or_away_games_list)
+            big_giant.extend(latest_games_list)
+            big_giant.extend(games_on_day_list)
+            big_giant.extend(games_at_time_list)
+            big_giant.extend(at_stadium_list)
+            big_giant.extend(wind_direction_games_list)
+            big_giant.extend(wind_speed_games_list)
+            big_giant.extend(cloud_or_sun_games_list)
+            big_giant.extend(precipitation_games_list)
+            big_giant.extend(games_vs_team_list)
         
 
             abs_in_common = []
             for item in big_giant:
                 i = 0
-                if item not in abs_in_common and item.hitter.name==player_name:
+                if item not in abs_in_common:
                     for secondary in big_giant:
                         if item==secondary:
                             i+=1
                     if i > 4:
                         abs_in_common.append({"item":item,"how_many":i})
 
-            if len(abs_in_common) > 25:
+            if len(abs_in_common) > how_many_abs:
             
                 sorted_abs_in_common = sorted(abs_in_common,key=itemgetter('how_many'))
                 sorted_abs_in_common.reverse()
@@ -1192,345 +1816,241 @@ with app.app_context():
                 high_ab_in_common = sorted_abs_in_common[0]["how_many"]
                 diffy = high_ab_in_common-.4*high_ab_in_common
 
-                new_sorted_abs_in_common = [ab for ab in sorted_abs_in_common if ab["how_many"] > diffy][-50:]
-                final_sorted_abs_in_common = {"name":"abs_in_common","array":[ab["item"] for ab in new_sorted_abs_in_common],"stdev":stdev([ab["item"].result_stdev for ab in new_sorted_abs_in_common])}
+                new_sorted_abs_in_common = [game for game in sorted_abs_in_common if game["how_many"] > diffy][number_of_abs:]
+                final_ks_sorted_abs_in_common = {"name":"abs_in_common","array":[game["item"] for game in new_sorted_abs_in_common],"stdev":stdev([game["item"]["strikeouts"] for game in new_sorted_abs_in_common])}
+                # final_innings_sorted_abs_in_common = {"name":"abs_in_common","array":[game["item"] for game in new_sorted_abs_in_common],"stdev":stdev([game["item"]["innings_pitched"] for game in new_sorted_abs_in_common])}
                 if len(sorted_abs_in_common) > 5:
-                    new_stdev_list.insert(0,final_sorted_abs_in_common)
+                    # new_innings_stdev_list.insert(0,final_innings_sorted_abs_in_common)
+                    new_ks_stdev_list.insert(0,final_ks_sorted_abs_in_common)
+
+            new_ks_stdev_list = sorted(new_ks_stdev_list,key=itemgetter('stdev'))
+            # new_innings_stdev_list = sorted(new_innings_stdev_list,key=itemgetter('stdev'))
 
             # print("Big giant done. Create player_value")
 
-
-            if len(new_stdev_list)==1:
-                first_value = 1.15 * mean([ab.result_stdev for ab in new_stdev_list[0]["array"]])
-            elif len(new_stdev_list)>1:
-                if len(new_stdev_list)==2:
-                    first_value = .75 * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
-                    second_value = .4 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
-                elif len(new_stdev_list)==3:
-                    first_value = .7 * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
-                    second_value = .3 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
-                    third_value = .15 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
-                elif len(new_stdev_list)==4:
-                    first_value = .7 * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
-                    second_value = .3 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
-                    third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
-                    fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
-                elif len(new_stdev_list)==5:
-                    first_value = .675 * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
-                    second_value = .3 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
-                    third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
-                    fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
-                    fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
-                elif len(new_stdev_list)==6:
-                    first_value = .675 * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
-                    second_value = .275 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
-                    third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
-                    fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
-                    fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
-                    sixth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[5]["array"])
-                elif len(new_stdev_list)==7:
-                    first_value = .675 * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
-                    second_value = .25 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
-                    third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
-                    fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
-                    fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
-                    sixth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[5]["array"])
-                    seventh_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[6]["array"])
-                elif len(new_stdev_list)==8:
-                    first_value = .65 * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
-                    second_value = .25 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
-                    third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
-                    fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
-                    fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
-                    sixth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[5]["array"])
-                    seventh_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[6]["array"])
-                    eigth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[7]["array"])
-                elif len(new_stdev_list)==9:
-                    first_value = .625 * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
-                    second_value = .25 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
-                    third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
-                    fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
-                    fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
-                    sixth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[5]["array"])
-                    seventh_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[6]["array"])
-                    eigth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[7]["array"])
-                    ninth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[8]["array"])
-                elif len(new_stdev_list)>=10:
-                    first_value = .6 * mean(ab.result_stdev for ab in new_stdev_list[0]["array"])
-                    second_value = .25 * mean(ab.result_stdev for ab in new_stdev_list[1]["array"]) 
-                    third_value = .1 * mean(ab.result_stdev for ab in new_stdev_list[2]["array"]) 
-                    fourth_value = .05 * mean(ab.result_stdev for ab in new_stdev_list[3]["array"])
-                    fifth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[4]["array"])
-                    sixth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[5]["array"])
-                    seventh_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[6]["array"])
-                    eigth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[7]["array"])
-                    ninth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[8]["array"])
-                    tenth_value = .025 * mean(ab.result_stdev for ab in new_stdev_list[9]["array"])
+            if len(new_ks_stdev_list)==1:
+                first_value = 1.15 * mean([game["strikeouts"] for game in new_ks_stdev_list[0]["array"]])
+            elif len(new_ks_stdev_list)>1:
+                if len(new_ks_stdev_list)==2:
+                    first_value = .65 * mean(game["strikeouts"] for game in new_ks_stdev_list[0]["array"])
+                    second_value = .3 * mean(game["strikeouts"] for game in new_ks_stdev_list[1]["array"]) 
+                elif len(new_ks_stdev_list)==3:
+                    first_value = first_value_comparer * mean(game["strikeouts"] for game in new_ks_stdev_list[0]["array"])
+                    second_value = .25 * mean(game["strikeouts"] for game in new_ks_stdev_list[1]["array"]) 
+                    third_value = .15 * mean(game["strikeouts"] for game in new_ks_stdev_list[2]["array"]) 
+                elif len(new_ks_stdev_list)==4:
+                    first_value = first_value_comparer * mean(game["strikeouts"] for game in new_ks_stdev_list[0]["array"])
+                    second_value = .25 * mean(game["strikeouts"] for game in new_ks_stdev_list[1]["array"]) 
+                    third_value = .1 * mean(game["strikeouts"] for game in new_ks_stdev_list[2]["array"]) 
+                    fourth_value = .05 * mean(game["strikeouts"] for game in new_ks_stdev_list[3]["array"])
+                elif len(new_ks_stdev_list)==5:
+                    first_value = first_value_comparer * mean(game["strikeouts"] for game in new_ks_stdev_list[0]["array"])
+                    second_value = .225 * mean(game["strikeouts"] for game in new_ks_stdev_list[1]["array"]) 
+                    third_value = .1 * mean(game["strikeouts"] for game in new_ks_stdev_list[2]["array"]) 
+                    fourth_value = .05 * mean(game["strikeouts"] for game in new_ks_stdev_list[3]["array"])
+                    fifth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[4]["array"])
+                elif len(new_ks_stdev_list)==6:
+                    first_value = first_value_comparer * mean(game["strikeouts"] for game in new_ks_stdev_list[0]["array"])
+                    second_value = .2 * mean(game["strikeouts"] for game in new_ks_stdev_list[1]["array"]) 
+                    third_value = .1 * mean(game["strikeouts"] for game in new_ks_stdev_list[2]["array"]) 
+                    fourth_value = .05 * mean(game["strikeouts"] for game in new_ks_stdev_list[3]["array"])
+                    fifth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[4]["array"])
+                    sixth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[5]["array"])
+                elif len(new_ks_stdev_list)==7:
+                    first_value = first_value_comparer * mean(game["strikeouts"] for game in new_ks_stdev_list[0]["array"])
+                    second_value = .175 * mean(game["strikeouts"] for game in new_ks_stdev_list[1]["array"]) 
+                    third_value = .1 * mean(game["strikeouts"] for game in new_ks_stdev_list[2]["array"]) 
+                    fourth_value = .05 * mean(game["strikeouts"] for game in new_ks_stdev_list[3]["array"])
+                    fifth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[4]["array"])
+                    sixth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[5]["array"])
+                    seventh_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[6]["array"])
+                elif len(new_ks_stdev_list)==8:
+                    first_value = first_value_comparer * mean(game["strikeouts"] for game in new_ks_stdev_list[0]["array"])
+                    second_value = .175 * mean(game["strikeouts"] for game in new_ks_stdev_list[1]["array"]) 
+                    third_value = .1 * mean(game["strikeouts"] for game in new_ks_stdev_list[2]["array"]) 
+                    fourth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[3]["array"])
+                    fifth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[4]["array"])
+                    sixth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[5]["array"])
+                    seventh_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[6]["array"])
+                    eigth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[7]["array"])
+                elif len(new_ks_stdev_list)==9:
+                    first_value = first_value_comparer * mean(game["strikeouts"] for game in new_ks_stdev_list[0]["array"])
+                    second_value = .175 * mean(game["strikeouts"] for game in new_ks_stdev_list[1]["array"]) 
+                    third_value = .05 * mean(game["strikeouts"] for game in new_ks_stdev_list[2]["array"]) 
+                    fourth_value = .05 * mean(game["strikeouts"] for game in new_ks_stdev_list[3]["array"])
+                    fifth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[4]["array"])
+                    sixth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[5]["array"])
+                    seventh_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[6]["array"])
+                    eigth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[7]["array"])
+                    ninth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[8]["array"])
+                elif len(new_ks_stdev_list)>=10:
+                    first_value = first_value_comparer * mean(game["strikeouts"] for game in new_ks_stdev_list[0]["array"])
+                    second_value = .175 * mean(game["strikeouts"] for game in new_ks_stdev_list[1]["array"]) 
+                    third_value = .05 * mean(game["strikeouts"] for game in new_ks_stdev_list[2]["array"]) 
+                    fourth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[3]["array"])
+                    fifth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[4]["array"])
+                    sixth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[5]["array"])
+                    seventh_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[6]["array"])
+                    eigth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[7]["array"])
+                    ninth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[8]["array"])
+                    tenth_value = .025 * mean(game["strikeouts"] for game in new_ks_stdev_list[9]["array"])
                 else:
                     continue
+            
 
-            hit_formula = first_value + second_value + third_value + fourth_value + fifth_value + sixth_value + seventh_value + eigth_value + ninth_value + tenth_value
-           
-            player_value = hit_formula * result_modifier
+            # if len(new_ks_stdev_list)==1:
+            #     first_inn_value = 1.15 * mean([game["innings_pitched"] for game in new_innings_stdev_list[0]["array"]])
+            # elif len(new_ks_stdev_list)>1:
+            #     if len(new_ks_stdev_list)==2:
+            #         first_inn_value = .65 * mean(game["innings_pitched"] for game in new_innings_stdev_list[0]["array"])
+            #         second_inn_value = .3 * mean(game["innings_pitched"] for game in new_innings_stdev_list[1]["array"]) 
+            #     elif len(new_ks_stdev_list)==3:
+            #         first_inn_value = first_value_comparer * mean(game["innings_pitched"] for game in new_innings_stdev_list[0]["array"])
+            #         second_inn_value = .25 * mean(game["innings_pitched"] for game in new_innings_stdev_list[1]["array"]) 
+            #         third_inn_value = .15 * mean(game["innings_pitched"] for game in new_innings_stdev_list[2]["array"]) 
+            #     elif len(new_ks_stdev_list)==4:
+            #         first_inn_value = first_value_comparer * mean(game["innings_pitched"] for game in new_innings_stdev_list[0]["array"])
+            #         second_inn_value = .25 * mean(game["innings_pitched"] for game in new_innings_stdev_list[1]["array"]) 
+            #         third_inn_value = .1 * mean(game["innings_pitched"] for game in new_innings_stdev_list[2]["array"]) 
+            #         fourth_inn_value = .05 * mean(game["innings_pitched"] for game in new_innings_stdev_list[3]["array"])
+            #     elif len(new_ks_stdev_list)==5:
+            #         first_inn_value = first_value_comparer * mean(game["innings_pitched"] for game in new_innings_stdev_list[0]["array"])
+            #         second_inn_value = .225 * mean(game["innings_pitched"] for game in new_innings_stdev_list[1]["array"]) 
+            #         third_inn_value = .1 * mean(game["innings_pitched"] for game in new_innings_stdev_list[2]["array"]) 
+            #         fourth_inn_value = .05 * mean(game["innings_pitched"] for game in new_innings_stdev_list[3]["array"])
+            #         fifth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[4]["array"])
+            #     elif len(new_ks_stdev_list)==6:
+            #         first_inn_value = first_value_comparer * mean(game["innings_pitched"] for game in new_innings_stdev_list[0]["array"])
+            #         second_inn_value = .2 * mean(game["innings_pitched"] for game in new_innings_stdev_list[1]["array"]) 
+            #         third_inn_value = .1 * mean(game["innings_pitched"] for game in new_innings_stdev_list[2]["array"]) 
+            #         fourth_inn_value = .05 * mean(game["innings_pitched"] for game in new_innings_stdev_list[3]["array"])
+            #         fifth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[4]["array"])
+            #         sixth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[5]["array"])
+            #     elif len(new_ks_stdev_list)==7:
+            #         first_inn_value = first_value_comparer * mean(game["innings_pitched"] for game in new_innings_stdev_list[0]["array"])
+            #         second_inn_value = .175 * mean(game["innings_pitched"] for game in new_innings_stdev_list[1]["array"]) 
+            #         third_inn_value = .1 * mean(game["innings_pitched"] for game in new_innings_stdev_list[2]["array"]) 
+            #         fourth_inn_value = .05 * mean(game["innings_pitched"] for game in new_innings_stdev_list[3]["array"])
+            #         fifth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[4]["array"])
+            #         sixth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[5]["array"])
+            #         seventh_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[6]["array"])
+            #     elif len(new_ks_stdev_list)==8:
+            #         first_inn_value = first_value_comparer * mean(game["innings_pitched"] for game in new_innings_stdev_list[0]["array"])
+            #         second_inn_value = .175 * mean(game["innings_pitched"] for game in new_innings_stdev_list[1]["array"]) 
+            #         third_inn_value = .1 * mean(game["innings_pitched"] for game in new_innings_stdev_list[2]["array"]) 
+            #         fourth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[3]["array"])
+            #         fifth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[4]["array"])
+            #         sixth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[5]["array"])
+            #         seventh_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[6]["array"])
+            #         eigth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[7]["array"])
+            #     elif len(new_ks_stdev_list)==9:
+            #         first_inn_value = first_value_comparer * mean(game["innings_pitched"] for game in new_innings_stdev_list[0]["array"])
+            #         second_inn_value = .175 * mean(game["innings_pitched"] for game in new_innings_stdev_list[1]["array"]) 
+            #         third_inn_value = .05 * mean(game["innings_pitched"] for game in new_innings_stdev_list[2]["array"]) 
+            #         fourth_inn_value = .05 * mean(game["innings_pitched"] for game in new_innings_stdev_list[3]["array"])
+            #         fifth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[4]["array"])
+            #         sixth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[5]["array"])
+            #         seventh_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[6]["array"])
+            #         eigth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[7]["array"])
+            #         ninth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[8]["array"])
+            #     elif len(new_ks_stdev_list)>=10:
+            #         first_inn_value = first_value_comparer * mean(game["innings_pitched"] for game in new_innings_stdev_list[0]["array"])
+            #         second_inn_value = .175 * mean(game["innings_pitched"] for game in new_innings_stdev_list[1]["array"]) 
+            #         third_inn_value = .05 * mean(game["innings_pitched"] for game in new_innings_stdev_list[2]["array"]) 
+            #         fourth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[3]["array"])
+            #         fifth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[4]["array"])
+            #         sixth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[5]["array"])
+            #         seventh_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[6]["array"])
+            #         eigth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[7]["array"])
+            #         ninth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[8]["array"])
+            #         tenth_inn_value = .025 * mean(game["innings_pitched"] for game in new_innings_stdev_list[9]["array"])
+            #     else:
+            #         continue
 
-            # ipdb.set_trace()
 
-            bets.append({"name":player_name,"value":round(player_value,4),"hits":player.hits,"abs":player.abs})
+                ks_formula = first_value + second_value + third_value + fourth_value + fifth_value + sixth_value + seventh_value + eigth_value + ninth_value + tenth_value
+                # innings_formula = first_inn_value + second_inn_value + third_inn_value + fourth_inn_value + fifth_inn_value + sixth_inn_value + seventh_inn_value + eigth_inn_value + ninth_inn_value + tenth_inn_value
+            
+                try:
+                    player_value = (ks_formula / (league_avg_ks + pitcher_strikeout_rate)) 
+                except ZeroDivisionError:
+                    ipdb.set_trace()
 
-            # print("Nice. On to the next")
+                bets.append({"name":player_name,"position":"P","value":round(player_value,4),"actual value":player.actual_value,"first":new_ks_stdev_list[0]["name"],"stdev_1":new_ks_stdev_list[0]["stdev"],"second":new_ks_stdev_list[1]["name"],"stdev_2":new_ks_stdev_list[1]["stdev"]})
 
-    sorted_bets = sorted(bets,key=itemgetter('value'))
-    sorted_bets.reverse()
+                # print("Nice. On to the next")
+
+
+
+
+    sorted_bets = sorted(bets,key=itemgetter('stdev_1'))
+    sorted_by_value_bets = sorted(bets,key=itemgetter('value'))
+
+    mid_value = median([a_value["value"] for a_value in sorted_by_value_bets])
+
+    
+    # sorted_bets.reverse()
+
+    iterator = 0
+    list_value = 0
+
     for bet in sorted_bets:
-        if int(bet["hits"]) > 0:
-            response = "✅"
+        if bet["position"]=="H":
+            if bet["value"] > mid_value:
+                list_value+=1
+            if (int(bet["abs"]) == 0):
+                response = "🏖️"
+            elif ((bet["value"]) > mid_value and int(bet["hits/ks"]) > 0 or int(bet["sbs/outs"]) > 0) or ((bet["value"]) < mid_value and int(bet["hits/ks"]) == 0):
+                if (int(bet["hits/ks"]) > 0 or int(bet["sbs/outs"]) > 0) and bet["value"] > mid_value:
+                    response = "⬆️✅"
+                    if list_value <= 30:
+                        iterator+=1
+                else:
+                    response = "👇🏽✅"
+            else:
+                if int(bet["hits/ks"]) == 0 and bet["value"] > mid_value:
+                    response = "⬆️❌"
+                else:
+                    response = "👇🏽❌"
+
         else:
-            response = "❌"
-        name = bet["name"]
-        value = bet["value"]
-        hits = bet["hits"]
-        at_bats = bet["abs"]
-        string_beginning = (f"{name} : {value} ({hits}/{at_bats})")
-        string_output = string_beginning.ljust(40,'.')
-        print(f"{string_output}{response}")
+            if bet["value"] > mid_value:
+                list_value+=1
+            if ((bet["value"]) > mid_value and int(bet["sbs/outs"]) > league_avg_outs) or ((bet["value"]) < mid_value and int(bet["sbs/outs"]) < league_avg_outs):
+                if (int(bet["hits/ks"]) > league_avg_ks and int(bet["sbs/outs"]) > league_avg_outs) and bet["value"] > mid_value:
+                    response = "⬆️✅"
+                    if list_value <= 30:
+                        iterator+=1
+                else:
+                    response = "👇🏽✅"
+            else:
+                if int(bet["hits/ks"]) == 0 and bet["value"] > league_avg_ks:
+                    response = "⬆️❌"
+                else:
+                    response = "👇🏽❌"
+        if bet["value"] > mid_value:
+            name = bet["name"]
+            value = bet["value"]
+            hits = bet["hits/ks"]
+            at_bats = bet["abs"]
+            sbs = bet["sbs/outs"]
+            first = bet["first"]
+            second = bet["second"]
+            stdev_1 = bet["stdev_1"]
+            stdev_2 = bet["stdev_2"]
+            if bet["position"]=="H":
+                string_area = f"({hits}/{at_bats}) Sb's: {sbs}"
+            else:
+                string_area = f"K's: {hits}, Outs: {sbs}"
+
+            string_beginning = (f"{name} : {value} {string_area} {first}:{round(stdev_1,4)}, {second}:{round(stdev_2,4)}")
+            string_output = string_beginning.ljust(120,'.')
+            print(f"{string_output}{response}")
+    percentage = round(100*iterator/30,3)
+    print(f"Top 30 are at {percentage}%")
 
     ipdb.set_trace()
 
+    print("Hi")
 
-
-    #make a draftkings algorithm
-
-        #roster
-            #2 P
-            #1 C
-            #1 1B
-            #1 2B
-            #1 SS
-            #1 3B
-            #3 OF
-        
-        #Salary Cap = $50,000
-
-    
-                    
    
-
-    
-
-    # sorted_bets = sorted(bets,key=itemgetter('perc'))[-10:]
-    # sort_by_diff = sorted(bets,key=itemgetter('diff'))[-10:]
-    # sorted_by_total_value = sorted(games_in_a_row,key=itemgetter('total_value'))[-20:]
-    # sorted_by_total_value = [item for item in sorted_by_total_value if item["total_value"]>.8]
-    # sorted_by_total_value.reverse()
-    # sorted_by_games_straight = sorted(games_in_a_row,key=itemgetter('games_straight'))[-20:]
-    # sorted_by_games_straight.reverse()
-    # sorted_by_games_straight = [item for item in sorted_by_games_straight if item["games_straight"]>4]
-
-    # weekday_games_sorted = sorted(weekday_games,key=itemgetter("value"))[-20:]
-    # weekday_games_sorted.reverse()
-        
-    # for item in sorted_bets:
-    #     name = item["name"]
-    #     prop = item["prop"]
-    #     line = item["line"]
-    #     projected = item["projected"]
-    #     bet = item["bet"]
-    #     print(f"{name} {bet} in {prop}. Projected: {projected}, Line: {line}")
-
-    # print("\nBets sorted by difference\n")
-
-    # for item in sort_by_diff:
-    #     name = item["name"]
-    #     prop = item["prop"]
-    #     line = item["line"]
-    #     projected = item["projected"]
-    #     bet = item["bet"]
-    #     print(f"{name} {bet} in {prop}. Projected: {projected}, Line: {line}")
-
-
-    # print("\nBets with lowest consistency")
-
-    # for item in lowest_consistency:
-    #     name=item["name"]
-    #     stat = item["stat"]
-    #     value = item["value"]
-    #     line = item["line"]
-    #     print(f"{name} {line} {stat}: {value}")
-
-    # print("\nBets with highest consistency")
-
-    # for item in highest_consistency:
-    #     name=item["name"]
-    #     stat = item["stat"]
-    #     value = item["value"]
-    #     line = item["line"]
-    #     print(f"{name} {line} {stat}: {value}")
-
-
-    # print("\nHigh value teasers\n")
-
-    # for index, item in enumerate(sorted_high_value_teasers):
-    #     name=item["name"]
-    #     prop = item["prop"]
-    #     value = item["value"]
-    #     teaser = item["teaser"]
-    #     modifier = item["modifier"]
-    #     proj = item["proj"]
-    #     data_points = item["data_points"]
-    #     games_straight = item["games_straight"]
-
-    #     player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="high_value",FinalBet.category_value==(index+1)).all()
-
-    #     if len(player_data_list) > 0:
-    #         player_data = player_data_list[0]
-    #         player_data.name = name
-    #         player_data.prop = prop
-    #         player_data.line = teaser
-    #     else:
-    #         player = FinalBet(
-    #             category = "high_value",
-    #             algorithm = "B",
-    #             category_value = index+1,
-    #             date = full_date,
-    #             name = name,
-    #             prop = prop,
-    #             line = teaser
-    #         )
-    #         db.session.add(player)
-    #     db.session.commit()
-
-    #     print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight})")
-
-    # print("\nLow value teasers\n")
-
-    # for index, item in enumerate(sorted_low_value_teasers):
-    #     name=item["name"]
-    #     prop = item["prop"]
-    #     value = item["value"]
-    #     teaser = item["teaser"]
-    #     modifier = item["modifier"]
-    #     proj = item["proj"]
-    #     data_points = item["data_points"]
-    #     games_straight = item["games_straight"]
-
-    #     player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="low_value",FinalBet.category_value==(index+1)).all()
-    #     if len(player_data_list) > 0:
-    #         player_data = player_data_list[0]
-    #         player_data.name = name
-    #         player_data.prop = prop
-    #         player_data.line = teaser
-    #     else:
-    #         player = FinalBet(
-    #             category = "low_value",
-    #             algorithm = "B",
-    #             category_value = index+1,
-    #             date = full_date,
-    #             name = name,
-    #             prop = prop,
-    #             line = teaser
-    #         )
-    #         db.session.add(player)
-    #     db.session.commit()
-
-    #     print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight})")
-
-
-    # print("\nMost Games in a Row\n")
-
-    # for index, item in enumerate(sorted_by_games_straight):
-    #     name=item["name"]
-    #     prop = item["prop"]
-    #     value = item["value"]
-    #     teaser = item["teaser"]
-    #     modifier = item["modifier"]
-    #     proj = item["proj"]
-    #     data_points = item["data_points"]
-    #     games_straight = item["games_straight"]
-
-    #     player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="games_in_a_row",FinalBet.category_value==(index+1)).all()
-    #     if len(player_data_list) > 0:
-    #         player_data = player_data_list[0]
-    #         player_data.name = name
-    #         player_data.prop = prop
-    #         player_data.line = teaser
-    #     else:
-    #         player = FinalBet(
-    #             category = "games_in_a_row",
-    #             algorithm = "B",
-    #             category_value = index+1,
-    #             date = full_date,
-    #             name = name,
-    #             prop = prop,
-    #             line = teaser
-    #         )
-    #         db.session.add(player)
-    #     db.session.commit()
-
-    #     print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight})")
-
-
-
-    # print("\nRanked by Total Value\n")
-
-    # for index, item in enumerate(sorted_by_total_value):
-    #     name=item["name"]
-    #     prop = item["prop"]
-    #     value = item["value"]
-    #     teaser = item["teaser"]
-    #     modifier = item["modifier"]
-    #     proj = item["proj"]
-    #     data_points = item["data_points"]
-    #     games_straight = item["games_straight"]
-    #     total_value = item["total_value"]
-
-    #     player_data_list = FinalBet.query.filter(FinalBet.date==full_date,FinalBet.algorithm=="B",FinalBet.category=="total_value",FinalBet.category_value==(index+1)).all()
-    #     if len(player_data_list) > 0:
-    #         player_data = player_data_list[0]
-    #         player_data.name = name
-    #         player_data.prop = prop
-    #         player_data.line = teaser
-    #     else:
-    #         player = FinalBet(
-    #             category = "total_value",
-    #             algorithm = "B",
-    #             category_value = index+1,
-    #             date = full_date,
-    #             name = name,
-    #             prop = prop,
-    #             line = teaser
-    #         )
-    #         db.session.add(player)
-    #     db.session.commit()
-
-    #     print(f"{index+1}: {name} {teaser} {prop}: {value} (Modifier:{modifier}, Projection:{proj}, Data Points:{data_points}, Games Straight:{games_straight}, Total Value:{total_value})")
-        
-        
-    # print("\nWeekday Comparisons\n")
-
-    # for index, item in enumerate(weekday_games_sorted):
-    #     name = item["name"]
-    #     prop = item["prop"]
-    #     value = item["value"]
-    #     line = item["line"]
-    #     print(f"{index+1}: {name} {line} {prop}: {value}")
-
-    # print("Injuries:")
-
-    # for team,injuries in injured_list.items():
-    #     if team in list_of_teams:
-    #         print(f"{team}: {injuries}")
-
-    # print("\nAlgo B")
-    # print(time_string)
-    # print('✅')
-
-            
-
-
-
-# category (high teaser, low teaser, games in a row, total value)
-# category value (1,2,3,etc...)
-# date
-# player name
-# prop (trb, points, assists)
-# line

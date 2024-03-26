@@ -18,7 +18,7 @@ import ipdb
 
 with app.app_context():
     
-    years = ["2022"]
+    years = ["2021"]
 
     for year in years:
 
@@ -56,6 +56,10 @@ with app.app_context():
             bottoms= commentsoup.select('tr.bottom_inning')
             tops.extend(bottoms)
 
+            pitching_data = box_score_data.select('.section_wrapper')[1]
+            pitching_data_comment = pitching_data.find(string=lambda string:isinstance(string, Comment))
+            pitching_data_soup = BeautifulSoup(pitching_data_comment , 'lxml')
+
             date = box_score_data.select('.scorebox_meta')[0].select('div')[0].text
             the_time = box_score_data.select('.scorebox_meta')[0].select('div')[1].text
 
@@ -72,9 +76,20 @@ with app.app_context():
             total_date = date+" "+the_time_list[2]+" "+ending_of_date
 
 
-            the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
+            try:
+                the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
+            except ValueError:
+                the_time = box_score_data.select('.scorebox_meta')[0].select('div')[2].text
+                the_time_list = the_time.split(' ')
+                if the_time_list[3][0]=='p':
+                    ending_of_date="PM"
+                else:
+                    ending_of_date="AM"
 
-            if the_time_string > datetime(2022,4,18,22,00):
+                total_date = date+" "+the_time_list[2]+" "+ending_of_date
+                the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
+
+            if the_time_string > datetime(2022,5,5,22,00):
                 break
                 
 
@@ -130,9 +145,11 @@ with app.app_context():
 
             if len(weather.split(',')) > 3:
                 precipitation = weather.replace('.','').split(',')[3][1:]
+                cloud_or_sun = weather.replace('.','').split(',')[2][1:]
             else: 
                 precipitation = "In Dome"
-            cloud_or_sun = weather.replace('.','').split(',')[2][1:]
+                cloud_or_sun = "In Dome"
+            
 
             match = Game(
                 visitor= away,
@@ -154,10 +171,23 @@ with app.app_context():
             for index, player in enumerate(tops):
 
                 result = player.select('td')[10].text
-                seperated_results = result.replace('-',' ').replace('/',' ').replace(';',' ').replace(':',' ').split(' ')
+                seperated_results = result.replace('-',' ').replace('/',' ').replace(';',' ').replace(':',' ').replace('\xa0',' ').split(' ')
                 sb=0
                 sb_att = 0
                 rbi = 0
+
+
+                if "Scores" in result:
+                    if "R" in player.select('td')[4].text:
+                            for index, word in enumerate(seperated_results):
+                                if word=="Scores":
+                                    scored = seperated_results[index-1]
+                                    person_who_scored_list = [scorer for scorer in AtBat.query.order_by(AtBat.id.desc()).limit(9).all() if scored in scorer.hitter.name]
+                                    if len(person_who_scored_list) > 0:
+                                        person_who_scored = person_who_scored_list[0]
+                                        person_who_scored.score = True
+                                        db.session.commit()
+
                 if "Wild Pitch" in result or "Steals" in result or "Caught" in result or "Passed" in result or "Picked" in result or "Defensive" in result or "Advancing" in result:
                     #we're gonna find the person who stole or scored on a wp 
                     if "Steals" in result:
@@ -181,20 +211,8 @@ with app.app_context():
                                     person_who_stole.sb_att = person_who_stole.sb_att+1
                                     db.session.commit()
                                     # break
-                    elif "Picked" in result or "Defensive" in result or "Advancing" in result:
-                        pass
                     else:
-                        if "R" in player.select('td')[4].text:
-                            for index, word in enumerate(seperated_results):
-                                if word=="Scores":
-                                    scored = seperated_results[index-1]
-                                    person_who_scored_list = [scorer for scorer in AtBat.query.order_by(AtBat.id.desc()).limit(9).all() if scored in scorer.hitter.name]
-                                    if len(person_who_scored_list) > 0:
-                                        person_who_scored = person_who_scored_list[0]
-                                        person_who_scored.score = True
-                                        db.session.commit()
-                                    
-                               
+                        pass
 
                 else:
                 
@@ -233,7 +251,9 @@ with app.app_context():
                             play = play[0]+(' ')+play[1]
                         else:
                             play = play[0]
-                    elif "Groundout" in result:
+                    elif "Single" in result:
+                        play = "Single"
+                    elif "Ground" in result:
                         play = "Groundout"
                         strength = "Weak"
                     elif "Reached on" in result:
@@ -255,8 +275,6 @@ with app.app_context():
                         play = "Fielder Choice"
                     elif "Walk" in result:
                         play = "Walk"
-                    elif "Single" in result:
-                        play = "Single"
                     elif "Triple" in result:
                         play = "Triple"
                         strength = "Strong"
@@ -290,21 +308,6 @@ with app.app_context():
                                     person_who_scored.score = True
                                     db.session.commit()
                                 rbi+=1
-                               
-
-                    if "Strikeout" in play:
-                        result_stdev=0
-                    elif "Popfly" in play or "Groundout" in play or "Choice" in play or "Error" in play:
-                        result_stdev=.15
-                    elif "Flyout" in play:
-                        result_stdev=.35
-                    elif "Walk" in play or "Sacrifice" in play or "Interference" in play or "Hit" in play:
-                        result_stdev=.5
-                    elif "Lineout" in play:
-                        result_stdev=.75
-                    else:
-                        result_stdev=1
-
                 
                     inning = player.select('th')[0].text[1:]
                     if player.select('th')[0].text[0] == "t":
@@ -315,6 +318,12 @@ with app.app_context():
                     balls = player.select('td')[3].text.split(',')[1][1]
                     strikes = player.select('td')[3].text.split(',')[1][3]
 
+                    outs = len([value for value in player.select('td')[4].text if value=="O"])
+
+
+                    
+                    if int(sb)>0:
+                        ipdb.set_trace()
 
                     at_bat = AtBat(
                         inning= inning,
@@ -329,7 +338,7 @@ with app.app_context():
                         sb = sb,
                         sb_att = sb_att,
                         team = team,
-                        result_stdev = result_stdev
+                        outs = outs
                     )
 
                     at_bat.pitcher = assoc_pitcher
@@ -337,8 +346,129 @@ with app.app_context():
                     at_bat.game = match
                     db.session.add(at_bat)
                     db.session.commit()
+
+            away_pitcher = [ab for ab in match.at_bats if ab.team==match.home][0].pitcher
+            home_pitcher = [ab for ab in match.at_bats if ab.team==match.visitor][0].pitcher
+
+            away_pitcher_with_w_l = pitching_data_soup.select('tbody')[0].select('tr')[0].select('th')[0].text.split(',')
+            home_pitcher_with_w_l = pitching_data_soup.select('tbody')[1].select('tr')[0].select('th')[0].text.split(',')
+            
+
+            away_pitcher_abs = [ab for ab in match.at_bats if ab.pitcher==away_pitcher]
+            home_pitcher_abs = [ab for ab in match.at_bats if ab.pitcher==home_pitcher]
+
+            away_pitcher_value = 0
+            away_pitcher_outs = 0
+            away_pitcher_hits = 0
+            for ab in away_pitcher_abs:
+                away_pitcher_outs += ab.outs
+                if "Strikeout" in ab.result:
+                    away_pitcher_value+=2
+                if ab.score==1 and "Error" not in ab.result:
+                    away_pitcher_value-=2
+                if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run":
+                    away_pitcher_value-=.6
+                    away_pitcher_hits+=1
+                if ab.result=="Hit" or ab.result=="Walk":
+                    away_pitcher_value-=.6
+
+            
+            away_pitcher_value += away_pitcher_outs * .75
+            if len(away_pitcher_with_w_l) > 1:
+                if "W" in away_pitcher_with_w_l[1]:
+                    away_pitcher_value +=4
+            if away_pitcher_outs >= 27:
+                away_pitcher_value+=2.5
+                if away_pitcher_hits==0:
+                    away_pitcher_value+=5
+                if match.home_score==0:
+                    away_pitcher_value+=2.5
+
+
+            home_pitcher_value = 0
+            home_pitcher_outs = 0
+            home_pitcher_hits = 0
+            for ab in home_pitcher_abs:
+                home_pitcher_outs += ab.outs
+                if "Strikeout" in ab.result:
+                    home_pitcher_value+=2
+                if ab.score==1 and "Error" not in ab.result:
+                    home_pitcher_value-=2
+                if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run":
+                    home_pitcher_value-=.6
+                    home_pitcher_hits+=1
+                if ab.result=="Hit" or ab.result=="Walk":
+                    home_pitcher_value-=.6
+
+
+            home_pitcher_value += home_pitcher_outs * .75
+            if len(home_pitcher_with_w_l) > 1:
+                if "W" in home_pitcher_with_w_l[1]:
+                    home_pitcher_value +=4
+            if home_pitcher_outs >= 27:
+                home_pitcher_value+=2.5
+                if home_pitcher_hits==0:
+                    home_pitcher_value+=5
+                if match.away_score==0:
+                    home_pitcher_value+=2.5
+
+
+            match.home_pitcher_result = home_pitcher_value
+            match.away_pitcher_result = away_pitcher_value
+
+
+            abs = match.at_bats
+
+            for ab in abs:
+
+                ab_total = 0
+                if ab.result=="Home Run":
+                    ab_total+=10
+                elif ab.result=="Triple":
+                    ab_total+=8
+                elif ab.result=="Double":
+                    ab_total+=5
+                elif ab.result=="Single":
+                    ab_total+=3
+                elif "Hit" in ab.result or "Walk" in ab.result:
+                    ab_total+=2
+
+                if ab.sb>=1:
+                    ab_total+=5*ab.sb
+                if ab.sb==0 and ab.sb_att>=1:
+                    ab_total+=ab.sb_att
+
+
+                if ab.rbi > 0:
+                    ab_total+=2*ab.rbi
+
+
+                if ab.score==1:
+                    ab_total+=2
+                    
+
+                if 18 <= ab_total:
+                    ab.result_stdev = 1
+                elif 14 <= ab_total <= 17:
+                    ab.result_stdev = 0.95
+                elif 10 <= ab_total <= 13:
+                    ab.result_stdev = 0.9
+                elif 5 <= ab_total <= 9:
+                    ab.result_stdev = .78
+                elif 3 <= ab_total <= 4:
+                    ab.result_stdev = .65
+                elif ab_total == 2:
+                    ab.result_stdev = .5
+                elif "Line" in ab.result:
+                    ab.result_stdev = .25
+                elif "Strikeout" in ab.result:
+                    ab.result_stdev = 0
+                else:
+                    ab.result_stdev = .15
+                    db.session.commit()
                         
             print(date)
+            ipdb.set_trace()
             time.sleep(3.2)
                 
 

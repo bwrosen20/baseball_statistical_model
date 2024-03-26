@@ -124,6 +124,8 @@ with app.app_context():
 
     hitters_left = [player for player in Hitter.query.all() if player.bat!="L" and player.bat!="R" and player.bat!="B" and player.bat!="S"]
 
+    ipdb.set_trace()
+
     total_players = len(hitters_left)
 
     counter = 0

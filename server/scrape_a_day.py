@@ -1,400 +1,347 @@
 from turtle import ht
 from datetime import datetime
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from app import app
 from urllib.request import Request, urlopen
 from pprint import pprint
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import db, Game, Pitcher, Hitter, AtBat, FinalBet
+from models import db, Game, Pitcher, Hitter, AtBat
 from unidecode import unidecode
-from operator import itemgetter
 import time
 import requests
 import ipdb
 
-#this program will download all game data from a specific day
+
+
 
 
 with app.app_context():
 
-
-    pitchers = Pitcher.query.all()
-
-    sortable_list = []
-
-    for pitcher in pitchers:
-        numerator = len([ab for ab in pitcher.at_bats if "Strikeout" in ab.result])
-        denominator = len(pitcher.at_bats)
-        ratio = numerator/denominator
-        k = {"name":pitcher.name,"ratio":ratio}
-        sortable_list.append(k)
-
-    sorted_ks = sorted(sortable_list,key=itemgetter('ratio'))[0:30]
-
-    for k in sorted_ks:
-        name = k["name"]
-        ks = k["ratio"]
-        print(f"{name}: {ks}")
-
-    ipdb.set_trace()
     
-    
+    def scrape_a_day(todays_time_string):
 
-    def scrape_a_day(yesterday,month_of_games,year_of_games):
-        #input the correct date and correct url then run program
-        todays_date = yesterday
-                
+        year = todays_time_string.year
+        
         # headers = {'user-agent': 'my-app/0.0.1'}
-        html = requests.get(f"https://www.basketball-reference.com/leagues/NBA_{year_of_games}_games-{month_of_games}.html", headers={'User-Agent':"Mozilla/5.0"})
+        html = requests.get(f"https://www.baseball-reference.com/leagues/majors/{year}-schedule.shtml", headers={'User-Agent':"Mozilla/5.0"})
         # date = html.select('div.ScheduleDay_sd_GFE_w')[0]
 
 
         doc = BeautifulSoup(html.text, 'html.parser')
-        rows = doc.find_all('tr')
+        rows = doc.select('p.game')
 
-        rows.pop(0)
+        #games that year in database
+        games_that_year = len([game for game in Game.query.all() if game.date.year==int(year)])
 
-        games = []
 
-        for game in rows:
-            date = game.select('th')[0].text
-            format_date = datetime.strptime(date, "%a, %b %d, %Y").date()
-            if format_date == todays_date:
-                new_date = date.replace(',','')
-                my_time = (game.select('td')[0].text)
-                empty_time = my_time.replace('p','').replace('a','').replace(":","")
-                if my_time[-1]=='p':
-                    empty_time = str(int(empty_time)+1200)
-                    if int(empty_time) >= 2400:
-                        empty_time = "0"+empty_time[2:4]
-                if int(empty_time)<1000:
-                    empty_time = '0'+empty_time
-                if len(date)==16:
-                    date=date[0:9]+'0'+date[9:16]
-                    new_date=new_date[0:8]+'0'+new_date[8:14]
-                full_date = new_date[0:10]+" "+empty_time[0:2]+":"+empty_time[2:4]+":"+"00 "+new_date[11:15]
-                time_obj = datetime.strptime(full_date,"%a %b %d %H:%M:%S %Y")
+        for game in rows[games_that_year:]:
+
+            home = game.select('a')[1].text
+            away = game.select('a')[0].text
+
+            
+            url_ending = game.select('a')[2].get("href")
+
+            box_score_url = f"https://www.baseball-reference.com/{url_ending}"
+
+            box_score = requests.get(box_score_url)
+
+            box_score_data = BeautifulSoup(box_score.text, 'lxml')
+            play_by_play = box_score_data.select('#all_play_by_play')[0]
+
+            comment = play_by_play.find(string=lambda string:isinstance(string, Comment))
+            commentsoup = BeautifulSoup(comment , 'lxml')
+            tops = commentsoup.select('tr.top_inning')
+            bottoms= commentsoup.select('tr.bottom_inning')
+            tops.extend(bottoms)
+
+            date = box_score_data.select('.scorebox_meta')[0].select('div')[0].text
+            the_time = box_score_data.select('.scorebox_meta')[0].select('div')[1].text
+
+            # ipdb.set_trace()
+
+            the_time_list = the_time.split(' ')
+
+            
+            if the_time_list[3][0]=='p':
+                ending_of_date="PM"
+            else:
+                ending_of_date="AM"
+
+            total_date = date+" "+the_time_list[2]+" "+ending_of_date
+
+
+            the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
+
+            if the_time_string.date() > todays_time_string.date():
+                break
                 
-                home = game.select('td.left')[1].text
-                away = game.select('td.left')[0].text
-                month_in_letters = date[5:8]
-                if  month_in_letters=="Jan":
-                    month = "01"
-                elif month_in_letters=="Feb":
-                    month = "02"
-                elif month_in_letters=="Mar":
-                    month = "03"
-                elif month_in_letters=="Apr":
-                    month = "04"
-                elif month_in_letters=="May":
-                    month = "05"
-                elif month_in_letters=="Jun":
-                    month = "06"
-                elif month_in_letters=="Jul":
-                    month = "07"
-                elif month_in_letters=="Aug":
-                    month = "08"
-                elif month_in_letters=="Sep":
-                    month = "09"
-                elif month_in_letters=="Oct":
-                    month = "10"
-                elif month_in_letters=="Nov":
-                    month = "11"
+
+            location = (box_score_data.select('.scorebox_meta')[0].select('div')[3].text)[7:]
+            try:
+                truth = int(location[-2:])
+                if truth > 0:
+                    location = (box_score_data.select('.scorebox_meta')[0].select('div')[2].text)[7:]
+            except (ValueError,TypeError):
+                pass
+
+            type_of_field = box_score_data.select('.scorebox_meta')[0].select('div')[5].text
+
+            away_score = box_score_data.select('.scores')[0].select('div')[0].text
+            home_score = box_score_data.select('.scores')[1].select('div')[0].text
+
+            weather_data = box_score_data.select('div.section_wrapper')[2]
+
+            weather_comment = weather_data.find(string=lambda string:isinstance(string, Comment))
+            weathersoup = BeautifulSoup(weather_comment , 'lxml')
+            
+            weather_info = weathersoup.select('div.section_content')[0]
+
+            try:
+                weather = weather_info.select('div')[4].text
+            except IndexError:
+                weather = weather_info.select('div')[3].text
+
+            temperature = weather.split(',')[0].split(':')[1][1:3]
+            wind = weather.split(',')[1][6:]
+            wind_speed = wind.split(' ')[0].split('m')[0]
+
+            if "out to Centerfield" in wind:
+                wind_value = 180
+            elif "Left to Right" in wind:
+                wind_value = 270
+            elif "out to Rightfield" in wind:
+                wind_value = 225
+            elif "in from Rightfield" in wind:
+                wind_value = 22.5
+            elif "out to Leftfield" in wind:
+                wind_value = 135
+            elif "Right to Left" in wind:
+                wind_value = 90
+            elif "in from Leftfield" in wind:
+                wind_value = 315
+            elif "in from Centerfield" in wind:
+                wind_value = 0
+            else:
+                wind_value = 400
+
+
+
+            if len(weather.split(',')) > 3:
+                precipitation = weather.replace('.','').split(',')[3][1:]
+            else: 
+                precipitation = "In Dome"
+            cloud_or_sun = weather.replace('.','').split(',')[2][1:]
+
+            match = Game(
+                visitor= away,
+                home= home,
+                location= location,
+                temperature = temperature,
+                wind_direction = wind_value,
+                wind_speed = wind_speed,
+                precipitation = precipitation,
+                cloud_or_sun = cloud_or_sun,
+                home_score= home_score,
+                away_score= away_score,
+                date= the_time_string
+            )
+            
+            db.session.add(match)
+            db.session.commit()
+
+            for index, player in enumerate(tops):
+
+                result = player.select('td')[10].text
+                seperated_results = result.replace('-',' ').replace('/',' ').replace(';',' ').replace(':',' ').split(' ')
+                sb=0
+                sb_att = 0
+                rbi = 0
+                if "Wild Pitch" in result or "Steals" in result or "Caught" in result or "Passed" in result or "Picked" in result or "Defensive" in result or "Advancing" in result:
+                    #we're gonna find the person who stole or scored on a wp 
+                    if "Steals" in result:
+                        for index, word in enumerate(seperated_results):
+                            if word=="Steals":
+                                stole = seperated_results[index-1]
+                                person_who_stole_list = [stealer for stealer in AtBat.query.order_by(AtBat.id.desc()).limit(9).all() if stole in stealer.hitter.name]
+                                if len(person_who_stole_list) > 0:
+                                    person_who_stole = person_who_stole_list[0]
+                                    person_who_stole.sb = person_who_stole.sb+1
+                                    person_who_stole.sb_att = person_who_stole.sb_att+1
+                                    db.session.commit()
+                                    # break
+                    elif "Caught" in result:
+                        for index, word in enumerate(seperated_results):
+                            if word=="Caught":
+                                stole = seperated_results[index-1]
+                                person_who_stole_list = [stealer for stealer in AtBat.query.order_by(AtBat.id.desc()).limit(9).all() if stole in stealer.hitter.name]
+                                if len(person_who_stole_list) > 0:
+                                    person_who_stole = person_who_stole_list[0]
+                                    person_who_stole.sb_att = person_who_stole.sb_att+1
+                                    db.session.commit()
+                                    # break
+                    elif "Picked" in result or "Defensive" in result or "Advancing" in result:
+                        pass
+                    else:
+                        if "R" in player.select('td')[4].text:
+                            for index, word in enumerate(seperated_results):
+                                if word=="Scores":
+                                    scored = seperated_results[index-1]
+                                    person_who_scored_list = [scorer for scorer in AtBat.query.order_by(AtBat.id.desc()).limit(9).all() if scored in scorer.hitter.name]
+                                    if len(person_who_scored_list) > 0:
+                                        person_who_scored = person_who_scored_list[0]
+                                        person_who_scored.score = True
+                                        db.session.commit()
+                                    
+                               
+
                 else:
-                    month = "12"
-
-                if home==("Atlanta Hawks"):
-                    abb="ATL"
-                elif home==("Boston Celtics"):
-                    abb="BOS"
-                elif home==("Charlotte Hornets"):
-                    abb="CHO"
-                elif home==("Chicago Bulls"):
-                    abb="CHI"
-                elif home==("Cleveland Cavaliers"):
-                    abb="CLE"
-                elif home==("Dallas Mavericks"):
-                    abb="DAL"
-                elif home==("Denver Nuggets"):
-                    abb="DEN"
-                elif home==("Detroit Pistons"):
-                    abb="DET"
-                elif home==("Golden State Warriors"):
-                    abb="GSW"
-                elif home==("Houston Rockets"):
-                    abb="HOU"
-                elif home==("Indiana Pacers"):
-                    abb="IND"
-                elif home==("Los Angeles Clippers"):
-                    abb="LAC"
-                elif home==("Los Angeles Lakers"):
-                    abb="LAL"
-                elif home==("Memphis Grizzlies"):
-                    abb="MEM"
-                elif home==("Miami Heat"):
-                    abb="MIA"
-                elif home==("Milwaukee Bucks"):
-                    abb="MIL"
-                elif home==("Minnesota Timberwolves"):
-                    abb="MIN"
-                elif home==("New Orleans Pelicans"):
-                    abb="NOP"
-                elif home==("New York Knicks"):
-                    abb="NYK"
-                elif home==("Brooklyn Nets"):
-                    abb="BRK"
-                elif home==("Oklahoma City Thunder"):
-                    abb="OKC"
-                elif home==("Orlando Magic"):
-                    abb="ORL"
-                elif home==("Philadelphia 76ers"):
-                    abb="PHI"
-                elif home==("Phoenix Suns"):
-                    abb="PHO"
-                elif home==("Portland Trail Blazers"):
-                    abb="POR"
-                elif home==("Sacramento Kings"):
-                    abb="SAC"
-                elif home==("Toronto Raptors"):
-                    abb="TOR"
-                elif home==("Utah Jazz"):
-                    abb="UTA"
-                elif home==("Washington Wizards"):
-                    abb="WAS"
-                elif home==("San Antonio Spurs"):
-                    abb="SAS"
                 
+                    #Find associations in Player and Hitter data sets
 
-                if away==("Atlanta Hawks"):
-                    abb_away="ATL"
-                elif away==("Boston Celtics"):
-                    abb_away="BOS"
-                elif away==("Charlotte Hornets"):
-                    abb_away="CHO"
-                elif away==("Chicago Bulls"):
-                    abb_away="CHI"
-                elif away==("Cleveland Cavaliers"):
-                    abb_away="CLE"
-                elif away==("Dallas Mavericks"):
-                    abb_away="DAL"
-                elif away==("Denver Nuggets"):
-                    abb_away="DEN"
-                elif away==("Detroit Pistons"):
-                    abb_away="DET"
-                elif away==("Golden State Warriors"):
-                    abb_away="GSW"
-                elif away==("Houston Rockets"):
-                    abb_away="HOU"
-                elif away==("Indiana Pacers"):
-                    abb_away="IND"
-                elif away==("Los Angeles Clippers"):
-                    abb_away="LAC"
-                elif away==("Los Angeles Lakers"):
-                    abb_away="LAL"
-                elif away==("Memphis Grizzlies"):
-                    abb_away="MEM"
-                elif away==("Miami Heat"):
-                    abb_away="MIA"
-                elif away==("Milwaukee Bucks"):
-                    abb_away="MIL"
-                elif away==("Minnesota Timberwolves"):
-                    abb_away="MIN"
-                elif away==("New Orleans Pelicans"):
-                    abb_away="NOP"
-                elif away==("New York Knicks"):
-                    abb_away="NYK"
-                elif away==("Brooklyn Nets"):
-                    abb_away="BRK"
-                elif away==("Oklahoma City Thunder"):
-                    abb_away="OKC"
-                elif away==("Orlando Magic"):
-                    abb_away="ORL"
-                elif away==("Philadelphia 76ers"):
-                    abb_away="PHI"
-                elif away==("Phoenix Suns"):
-                    abb_away="PHO"
-                elif away==("Portland Trail Blazers"):
-                    abb_away="POR"
-                elif away==("Sacramento Kings"):
-                    abb_away="SAC"
-                elif away==("Toronto Raptors"):
-                    abb_away="TOR"
-                elif away==("Utah Jazz"):
-                    abb_away="UTA"
-                elif away==("Washington Wizards"):
-                    abb_away="WAS"
-                elif away==("San Antonio Spurs"):
-                    abb_away="SAS"
-                
-
-                
-                url_date = date[13:17]+month+date[9:11]+'0'+abb
-
-                box_score_url = f"https://www.basketball-reference.com/boxscores/{url_date}.html"
-
-                box_score = requests.get(box_score_url)
-                
-                box_score_data = BeautifulSoup(box_score.text, 'html.parser')
-
-                line_score = box_score_data.select('#line_score')
-
-                away_players_data = box_score_data.select(f'#box-{abb_away}-game-basic')[0].select('tbody')[0].select('tr')
-                away_players_data.pop(5)
-                away_players_advanced_data = box_score_data.select(f'#box-{abb_away}-game-advanced')[0].select('tbody')[0].select('tr')
-                away_players_advanced_data.pop(5)
-
-                home_players_data = box_score_data.select(f'#box-{abb}-game-basic')[0].select('tbody')[0].select('tr')
-                home_players_data.pop(5)
-                home_players_advanced_data = box_score_data.select(f'#box-{abb}-game-advanced')[0].select('tbody')[0].select('tr')
-                home_players_advanced_data.pop(5)
-                
-                match = Game(
-                    visitor= away,
-                    home= home,
-                    location= game.select('td.left')[2].text,
-                    home_score= int(game.select('td.right')[2].text),
-                    away_score= int(game.select('td.right')[1].text),
-                    date= time_obj
-                )
-
-                db.session.add(match)
-                db.session.commit()
-
-                away_players = []
-                home_players = []
-
-                for index, player in enumerate(away_players_data):
-                    
-                    if len(player.select('.right'))>1:
-                        played = True
+                    hitter = unidecode(player.select('td')[6].text.replace('\xa0',' '))
+                    pitcher = unidecode(player.select('td')[7].text.replace('\xa0',' '))
+                    if (pitcher in [person.name for person in Pitcher.query.all()]):
+                        assoc_pitcher = Pitcher.query.filter(Pitcher.name == pitcher).first()
                     else:
-                        played = False
-                    if played:  
-
-                        name = unidecode(player.select('th a')[0].text)
-                        if (name in [person.name for person in Player.query.all()]):
-                            assoc_player = Player.query.filter(Player.name == name).first()
-                        elif name=="Nic Claxton":
-                            assoc_player = Player.query.filter(Player.name=="Nicolas Claxton").first()
-                        elif name=="Cam Thomas":
-                            assoc_player = Player.query.filter(Player.name=="Cameron Thomas").first()
-                        else:
-                            assoc_player = Player(name=name)
-                            db.session.add(assoc_player)
-                            db.session.commit()
-
-
-                        player_game = PlayerGame(
-                            minutes= int(player.select('.right')[0].text.replace(":","")),
-                            # 'fg': player.select('.right')[1].text,
-                            # 'fga': player.select('.right')[2].text,
-                            # 'fg_pct': player.select('.right')[3].text,
-                            three_pt= int(player.select('.right')[4].text),
-                            # 'three_pt_att':player.select('.right')[5].text,
-                            # 'three_pt_perc':player.select('.right')[6].text,
-                            # 'ft': player.select('.right')[7].text,
-                            # 'fta': player.select('.right')[8].text,
-                            # 'ft_perc': player.select('.right')[9].text,
-                            # 'orb': player.select('.right')[10].text,
-                            # 'drb': player.select('.right')[11].text,
-                            trb= int(player.select('.right')[12].text),
-                            assists= int(player.select('.right')[13].text),
-                            steals= int(player.select('.right')[14].text),
-                            blocks= int(player.select('.right')[15].text),
-                            # 'turnovers': player.select('.right')[16].text,
-                            # 'fouls': player.select('.right')[17].text,
-                            points= int(player.select('.right')[18].text),
-                            # 'plus_minus': player.select('.right')[19].text
-                            home= False,
-                            tsp= 0.00 if (away_players_advanced_data[index].select('.right')[1].text=="") else float(away_players_advanced_data[index].select('.right')[1].text),
-                            eft= 0.00 if (away_players_advanced_data[index].select('.right')[2].text=="") else float(away_players_advanced_data[index].select('.right')[2].text),
-                            # player["3PAr"]=away_players_advanced_data[index].select('.right')[3].text
-                            # player["FTr"]=away_players_advanced_data[index].select('.right')[4].text
-                            # player["ORBP"]=away_players_advanced_data[index].select('.right')[5].text
-                            # player["DRBP"]=away_players_advanced_data[index].select('.right')[6].text
-                            # player["TRBP"]=away_players_advanced_data[index].select('.right')[7].text
-                            # player["ASTP"]=away_players_advanced_data[index].select('.right')[8].text
-                            # player["STLP"]=away_players_advanced_data[index].select('.right')[9].text
-                            # player["BLKP"]=away_players_advanced_data[index].select('.right')[10].text
-                            # player["TOVP"]=away_players_advanced_data[index].select('.right')[11].text
-                            # player["USGP"]=away_players_advanced_data[index].select('.right')[12].text
-                            ORtg=0 if (away_players_advanced_data[index].select('.right')[13].text=="") else int(away_players_advanced_data[index].select('.right')[13].text),
-                            DRTg=0 if (away_players_advanced_data[index].select('.right')[14].text=="") else int(away_players_advanced_data[index].select('.right')[14].text),
-                            # BPM=0.00 if (away_players_advanced_data[index].select('.right')[15].text=="") else float(away_players_advanced_data[index].select('.right')[15].text)
-                            team=away
-                        )
-
-                        player_game.player = assoc_player
-                        player_game.game = match
-                        db.session.add(player_game)
+                        assoc_pitcher = Pitcher(name=pitcher)
+                        db.session.add(assoc_pitcher)
                         db.session.commit()
+
+                    if (hitter in [person.name for person in Hitter.query.all()]):
+                        assoc_hitter = Hitter.query.filter(Hitter.name == hitter).first()
+                    else:
+                        assoc_hitter = Hitter(name=hitter)
+                        db.session.add(assoc_hitter)
+                        db.session.commit()
+
+                    score = 0
+
+                    if "Line" in result  or "Lineout" in result or "Flyball" in result or "Fly Ball" in result:
+                        strength = "Strong"
+                    elif "Weak" in result or "Groundout" in result or "Ground" in result or "Popfly" in result:
+                        strength = "Weak"
+                    else:
+                        strength = "None"
+
+                    if "Sacrifice" in result:
+                        play = "Sacrifice"
+                    elif "Strikeout" in result:
+                        play = result.replace(';','').split(' ')
+                        if len(play) > 1:
+                            play = play[0]+(' ')+play[1]
+                        else:
+                            play = play[0]
+                    elif "Groundout" in result:
+                        play = "Groundout"
+                        strength = "Weak"
+                    elif "Reached on" in result:
+                        if "Interference" in result:
+                            play = "Catcher Interference"
+                        else:
+                            play = "Error"
+                    elif "Home Run" in result:
+                        play = "Home Run"
+                        score = 1
+                        rbi+=1
+                        strength = "Strong"
+                    elif "Popfly" in result:
+                        play = "Popfly"
+                    elif "Lineout" in result:
+                        play = "Lineout"
+                        strength = "Strong"
+                    elif "Choice" in result:
+                        play = "Fielder Choice"
+                    elif "Walk" in result:
+                        play = "Walk"
+                    elif "Single" in result:
+                        play = "Single"
+                    elif "Triple" in result:
+                        play = "Triple"
+                        strength = "Strong"
+                    elif "Double" in result:
+                        play = "Double"
+                        strength = "Strong"
+                    else:
+                        play = seperated_results[0]
+
+
+                    #check location of contact. Defaults to "None"
+
+                    position_list = ['P','C','1B','2B','3B','SS','LF','CF','RF']
+                    location = "None"
+
+                    for possible_position in seperated_results:
+                        if possible_position in position_list:
+                            location = possible_position
+                            # break
+
+
+                    #check RBI's. Download score onto previous at bats
+
+                    if "R" in player.select('td')[4].text:
+                        for index, word in enumerate(seperated_results):
+                            if word=="Scores":
+                                scored = seperated_results[index-1]
+                                person_who_scored_list = [scorer for scorer in AtBat.query.order_by(AtBat.id.desc()).limit(9).all() if scored in scorer.hitter.name]
+                                if len(person_who_scored_list) > 0:
+                                    person_who_scored = person_who_scored_list[0]
+                                    person_who_scored.score = True
+                                    db.session.commit()
+                                rbi+=1
+                               
+
+                    if "Strikeout" in play:
+                        result_stdev=0
+                    elif "Popfly" in play or "Groundout" in play or "Choice" in play or "Error" in play:
+                        result_stdev=.1
+                    elif "Flyout" in play:
+                        result_stdev=.2
+                    elif "Walk" in play or "Sacrifice" in play or "Interference" in play or "Hit" in play:
+                        result_stdev=.5
+                    elif "Lineout" in play:
+                        result_stdev=.4
+                    elif "Home" in play:
+                        result_stdev=1
+                    elif "Triple" in play or "Double" in play:
+                        result_stdev=.95
+                    else:
+                        result_stdev=.9
+
+                
+                    inning = player.select('th')[0].text[1:]
+                    if player.select('th')[0].text[0] == "t":
+                        team = away
+                    else:
+                        team = home
+                    pitches = player.select('td')[3].text.split(',')[0]
+                    balls = player.select('td')[3].text.split(',')[1][1]
+                    strikes = player.select('td')[3].text.split(',')[1][3]
+
+
+                    at_bat = AtBat(
+                        inning= inning,
+                        pitches = pitches,
+                        balls = balls,
+                        strikes = strikes,
+                        result = play,
+                        strength = strength,
+                        location = location,
+                        rbi = rbi,
+                        score = score,
+                        sb = sb,
+                        sb_att = sb_att,
+                        team = team,
+                        result_stdev = result_stdev
+                    )
+
+                    at_bat.pitcher = assoc_pitcher
+                    at_bat.hitter = assoc_hitter
+                    at_bat.game = match
+                    db.session.add(at_bat)
+                    db.session.commit()
                         
-
-                for index, home_player in enumerate(home_players_data):
-                    if len(home_player.select('.right'))>1:
-                        played = True
-                    else:
-                        played = False
-                    if played:
-
-                        name = unidecode(home_player.select('th a')[0].text)
-                        if (name in [person.name for person in Player.query.all()]):
-                            assoc_player = Player.query.filter(Player.name == name).first()
-                        elif name=="Nic Claxton":
-                            assoc_player = Player.query.filter(Player.name=="Nicolas Claxton").first()
-                        elif name=="Cam Thomas":
-                            assoc_player = Player.query.filter(Player.name=="Cameron Thomas").first()
-                        else:
-                            assoc_player = Player(name=name)
-                            db.session.add(assoc_player)
-                            db.session.commit()
-
-
-                        player_game = PlayerGame(
-                            minutes= int(home_player.select('.right')[0].text.replace(":","")),
-                            # 'fg': home_player.select('.right')[1].text,
-                            # 'fga': home_player.select('.right')[2].text,
-                            # 'fg_pct': home_player.select('.right')[3].text,
-                            three_pt= int(home_player.select('.right')[4].text),
-                            # 'three_pt_att': home_player.select('.right')[5].text,
-                            # 'three_pt_perc': home_player.select('.right')[6].text,
-                            # 'ft': home_player.select('.right')[7].text,
-                            # 'fta': home_player.select('.right')[8].text,
-                            # 'ft_perc': home_player.select('.right')[9].text,
-                            # 'orb': home_player.select('.right')[10].text,
-                            # 'drb': home_player.select('.right')[11].text,
-                            trb= int(home_player.select('.right')[12].text),
-                            assists= int(home_player.select('.right')[13].text),
-                            steals= int(home_player.select('.right')[14].text),
-                            blocks= int(home_player.select('.right')[15].text),
-                            # 'to': home_player.select('.right')[16].text,
-                            # 'fouls': home_player.select('.right')[17].text,
-                            points= int(home_player.select('.right')[18].text),
-                            # 'plus_minus': home_player.select('.right')[19].text
-                            home= True,
-                            tsp= 0.00 if (home_players_advanced_data[index].select('.right')[1].text=="") else float(home_players_advanced_data[index].select('.right')[1].text),
-                            eft= 0.00 if (home_players_advanced_data[index].select('.right')[2].text=="") else float(home_players_advanced_data[index].select('.right')[2].text),
-                            # player["tPAr"]=home_players_advanced_data[index].select('.right')[3].text
-                            # player["FTr"]=home_players_advanced_data[index].select('.right')[4].text
-                            # player["ORBP"]=home_players_advanced_data[index].select('.right')[5].text
-                            # player["DRBP"]=home_players_advanced_data[index].select('.right')[6].text
-                            # player["TRBP"]=home_players_advanced_data[index].select('.right')[7].text
-                            # player["ASTP"]=home_players_advanced_data[index].select('.right')[8].text
-                            # player["STLP"]=home_players_advanced_data[index].select('.right')[9].text
-                            # player["BLKP"]=home_players_advanced_data[index].select('.right')[10].text
-                            # player["TOVP"]=home_players_advanced_data[index].select('.right')[11].text
-                            # player["USGP"]=home_players_advanced_data[index].select('.right')[12].text
-                            ORtg=0 if (home_players_advanced_data[index].select('.right')[13].text=="") else int(home_players_advanced_data[index].select('.right')[13].text),
-                            DRTg=0 if (home_players_advanced_data[index].select('.right')[14].text=="") else int(home_players_advanced_data[index].select('.right')[14].text),
-                            # BPM=0.00 if (home_players_advanced_data[index].select('.right')[15].text=="") else float(home_players_advanced_data[index].select('.right')[15].text)
-                            team=home
-                        )
-
-                        player_game.player = assoc_player
-                        player_game.game = match
-                        db.session.add(player_game)
-                        db.session.commit()
-
-                print(date)
-                time.sleep(3.2)
+            print(date)
+            time.sleep(3.2)
+            

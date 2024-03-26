@@ -1,7 +1,9 @@
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import MetaData
 from sqlalchemy_serializer import SerializerMixin
+from sqlalchemy.ext.associationproxy import association_proxy
 # from sqlalchemy.ext.associationproxy import association_proxy
+
 
 metadata = MetaData(naming_convention={
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
@@ -27,11 +29,16 @@ class Game(db.Model, SerializerMixin):
     home_score = db.Column(db.Integer)
     away_score = db.Column(db.Integer)
     date = db.Column(db.DateTime)
+    home_pitcher_result = db.Column(db.Integer)
+    away_pitcher_result = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, onupdate=db.func.now())
 
     # at_bats = db.relationship('AtBat', back_populates="game")
-    at_bats = db.relationship('AtBat', backref=db.backref('game'))
+    at_bats = db.relationship('AtBat', back_populates="game" ,cascade = "all, delete")
+    # pitcher = db.relationship('Pitcher', secondary = "AtBat", back_populates="game")
+    pitchers = association_proxy('at_bats', 'pitcher',
+        creator=lambda pi: AtBat(pitcher=pi))
 
     def __repr__(self):
         return f'<{self.visitor} at {self.home} {self.date}>'
@@ -68,7 +75,10 @@ class Pitcher(db.Model, SerializerMixin):
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, onupdate=db.func.now())
 
-    at_bats = db.relationship('AtBat', backref=db.backref('pitcher'))
+    at_bats = db.relationship('AtBat', back_populates='pitcher')
+    # game = db.relationship('Game', secondary = "AtBat", back_populates="pitcher")
+    games = association_proxy('at_bats', 'game',
+        creator=lambda gm: AtBat(game=gm))
 
     
 
@@ -112,11 +122,16 @@ class AtBat(db.Model, SerializerMixin):
     sb = db.Column(db.Integer)
     sb_att = db.Column(db.Integer)
     team = db.Column(db.String)
+    outs = db.Column(db.Integer)
     result_stdev = db.Column(db.Integer)
 
     hitter_id = db.Column('hitter_id',db.Integer, db.ForeignKey('hitter.id'))
     pitcher_id = db.Column('pitcher_id',db.Integer, db.ForeignKey('pitcher.id'))
     game_id = db.Column('game_id',db.Integer, db.ForeignKey('game.id'))
+
+    game = db.relationship('Game', back_populates='at_bats')
+    pitcher = db.relationship('Pitcher', back_populates='at_bats')
+
 
 
     def __repr__(self):
