@@ -43,12 +43,19 @@ with app.app_context():
             ab_total+=2
             
 
-        if 18 <= ab_total:
+        # if "Line" in ab.result:
+        #     ab.result_stdev = 0.15
+        # else:
+        #     ab.result_stdev = ab_total/10
+
+        if 25 <=ab_total:
+            ab.result_stdev = 1.3
+        if 18 <= ab_total <=24:
             ab.result_stdev = 1
         elif 14 <= ab_total <= 17:
-            ab.result_stdev = 0.95
+            ab.result_stdev = .95
         elif 10 <= ab_total <= 13:
-            ab.result_stdev = 0.9
+            ab.result_stdev = .9
         elif 5 <= ab_total <= 9:
             ab.result_stdev = .78
         elif 3 <= ab_total <= 4:
@@ -69,68 +76,68 @@ with app.app_context():
     print("Done")
 
 
-    games = Game.query.all()
-    games_left = len(games)
+    # games = Game.query.all()
+    # games_left = len(games)
 
-    for game in games:
-        away_pitcher = [ab for ab in game.at_bats if ab.team==game.home][0].pitcher
-        home_pitcher = [ab for ab in game.at_bats if ab.team==game.visitor][0].pitcher
+    # for game in games:
+    #     away_pitcher = [ab for ab in game.at_bats if ab.team==game.home][0].pitcher
+    #     home_pitcher = [ab for ab in game.at_bats if ab.team==game.visitor][0].pitcher
 
-        away_pitcher_abs = [ab for ab in game.at_bats if ab.pitcher==away_pitcher]
-        home_pitcher_abs = [ab for ab in game.at_bats if ab.pitcher==home_pitcher]
+    #     away_pitcher_abs = [ab for ab in game.at_bats if ab.pitcher==away_pitcher]
+    #     home_pitcher_abs = [ab for ab in game.at_bats if ab.pitcher==home_pitcher]
 
-        away_pitcher_value = 0
-        away_pitcher_outs = 0
-        away_pitcher_hits = 0
-        for ab in away_pitcher_abs:
-            if "Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result:
-                away_pitcher_value+=.75
-                away_pitcher_outs+=1
-            if "Strikeout" in ab.result:
-                away_pitcher_value+=2
-            if ab.score==1 and "Error" not in ab.result:
-                away_pitcher_value-=2
-            if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run":
-                away_pitcher_value-=.6
-                away_pitcher_hits+=1
-            if ab.result=="Hit" or ab.result=="Walk":
-                away_pitcher_value-=.6
+    #     away_pitcher_value = 0
+    #     away_pitcher_outs = 0
+    #     away_pitcher_hits = 0
+    #     for ab in away_pitcher_abs:
+    #         if "Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result:
+    #             away_pitcher_value+=.75
+    #             away_pitcher_outs+=1
+    #         if "Strikeout" in ab.result:
+    #             away_pitcher_value+=2
+    #         if ab.score==1 and "Error" not in ab.result:
+    #             away_pitcher_value-=2
+    #         if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run":
+    #             away_pitcher_value-=.6
+    #             away_pitcher_hits+=1
+    #         if ab.result=="Hit" or ab.result=="Walk":
+    #             away_pitcher_value-=.6
 
-        if game.away_score > game.home_score and away_pitcher_outs >= 15:
-            away_pitcher_value +=4
-        if away_pitcher_outs >= 27:
-            away_pitcher_value+=2.5
-            if away_pitcher_hits==0:
-                away_pitcher_value+=5
-            if game.home_score==0:
-                away_pitcher_value+=2.5
+    #     if game.away_score > game.home_score and away_pitcher_outs >= 15:
+    #         away_pitcher_value +=4
+    #     if away_pitcher_outs >= 27:
+    #         away_pitcher_value+=2.5
+    #         if away_pitcher_hits==0:
+    #             away_pitcher_value+=5
+    #         if game.home_score==0:
+    #             away_pitcher_value+=2.5
 
 
-        home_pitcher_value = 0
-        home_pitcher_outs = 0
-        home_pitcher_hits = 0
-        for ab in home_pitcher_abs:
-            if "Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result:
-                home_pitcher_value+=.75
-                home_pitcher_outs+=1
-            if "Strikeout" in ab.result:
-                home_pitcher_value+=2
-            if ab.score==1 and "Error" not in ab.result:
-                home_pitcher_value-=2
-            if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run":
-                home_pitcher_value-=.6
-                home_pitcher_hits+=1
-            if ab.result=="Hit" or ab.result=="Walk":
-                home_pitcher_value-=.6
+    #     home_pitcher_value = 0
+    #     home_pitcher_outs = 0
+    #     home_pitcher_hits = 0
+    #     for ab in home_pitcher_abs:
+    #         if "Out" in ab.result or "out" in ab.result or "Pop" in ab.result or "Choice" in ab.result or "Fly" in ab.result:
+    #             home_pitcher_value+=.75
+    #             home_pitcher_outs+=1
+    #         if "Strikeout" in ab.result:
+    #             home_pitcher_value+=2
+    #         if ab.score==1 and "Error" not in ab.result:
+    #             home_pitcher_value-=2
+    #         if ab.result=="Single" or ab.result=="Double" or ab.result=="Triple" or ab.result=="Home Run":
+    #             home_pitcher_value-=.6
+    #             home_pitcher_hits+=1
+    #         if ab.result=="Hit" or ab.result=="Walk":
+    #             home_pitcher_value-=.6
 
-        if game.home_score > game.away_score and home_pitcher_outs >= 15:
-            home_pitcher_value +=4
-        if home_pitcher_outs >= 27:
-            home_pitcher_value+=2.5
-            if home_pitcher_hits==0:
-                home_pitcher_value+=5
-            if game.away_score==0:
-                home_pitcher_value+=2.5
+    #     if game.home_score > game.away_score and home_pitcher_outs >= 15:
+    #         home_pitcher_value +=4
+    #     if home_pitcher_outs >= 27:
+    #         home_pitcher_value+=2.5
+    #         if home_pitcher_hits==0:
+    #             home_pitcher_value+=5
+    #         if game.away_score==0:
+    #             home_pitcher_value+=2.5
 
 
     #     ipdb.set_trace()

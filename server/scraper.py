@@ -6,7 +6,7 @@ from urllib.request import Request, urlopen
 from pprint import pprint
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import db, Game, Pitcher, Hitter, AtBat
+from models import db, Game, Pitcher, Hitter, AtBat, Outing
 from unidecode import unidecode
 import time
 import requests
@@ -18,7 +18,7 @@ import ipdb
 
 with app.app_context():
     
-    years = ["2021"]
+    years = ["2024"]
 
     for year in years:
 
@@ -30,13 +30,15 @@ with app.app_context():
 
         doc = BeautifulSoup(html.text, 'html.parser')
         rows = doc.select('p.game')
-
+        rows = [row for row in rows if "Spring" not in row.text]
         #games that year in database
         games_that_year = len([game for game in Game.query.all() if game.date.year==int(year)])
 
 
         for game in rows[games_that_year:]:
 
+            if "Spring" in game.text:
+                continue
             home = game.select('a')[1].text
             away = game.select('a')[0].text
 
@@ -75,7 +77,6 @@ with app.app_context():
 
             total_date = date+" "+the_time_list[2]+" "+ending_of_date
 
-
             try:
                 the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
             except ValueError:
@@ -89,7 +90,7 @@ with app.app_context():
                 total_date = date+" "+the_time_list[2]+" "+ending_of_date
                 the_time_string = datetime.strptime(total_date,"%A, %B %d, %Y %I:%M %p")
 
-            if the_time_string > datetime(2022,5,5,22,00):
+            if the_time_string > datetime(2024,4,10,23,00):
                 break
                 
 
@@ -117,6 +118,18 @@ with app.app_context():
                 weather = weather_info.select('div')[4].text
             except IndexError:
                 weather = weather_info.select('div')[3].text
+
+            ipdb.set_trace()
+            umpire_string = weather_info.select('div')[0].text.split(' ')[3:]
+            umpire_list = []
+            for word in umpire_string:
+                if word=="1B":
+                    break
+                else:
+                    umpire_list.append(word)
+            umpire = (' ').join(umpire_list)
+
+
 
             temperature = weather.split(',')[0].split(':')[1][1:3]
             wind = weather.split(',')[1][6:]
@@ -281,6 +294,8 @@ with app.app_context():
                     elif "Double" in result:
                         play = "Double"
                         strength = "Strong"
+                    elif "Hit By Pitch" in result:
+                        play = "Hit By Pitch"
                     else:
                         play = seperated_results[0]
 
@@ -447,12 +462,14 @@ with app.app_context():
                     ab_total+=2
                     
 
-                if 18 <= ab_total:
+                if 25 <=ab_total:
+                    ab.result_stdev = 1.3
+                if 18 <= ab_total <=24:
                     ab.result_stdev = 1
                 elif 14 <= ab_total <= 17:
-                    ab.result_stdev = 0.95
+                    ab.result_stdev = .95
                 elif 10 <= ab_total <= 13:
-                    ab.result_stdev = 0.9
+                    ab.result_stdev = .9
                 elif 5 <= ab_total <= 9:
                     ab.result_stdev = .78
                 elif 3 <= ab_total <= 4:
@@ -465,10 +482,9 @@ with app.app_context():
                     ab.result_stdev = 0
                 else:
                     ab.result_stdev = .15
-                    db.session.commit()
+                db.session.commit()
                         
             print(date)
-            ipdb.set_trace()
             time.sleep(3.2)
                 
 
