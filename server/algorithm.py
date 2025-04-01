@@ -2189,7 +2189,9 @@ with app.app_context():
                             break
                 total_salary = sum([float(player.salary) for player in dk_players])
                 if total_salary < 50:
-                    break   
+                    break  
+
+        #I've gotta add this to commitW
 
         #now that we replaced a few players until we got the salary below the max,
         #we have a list of removed players who may be able to go back in
